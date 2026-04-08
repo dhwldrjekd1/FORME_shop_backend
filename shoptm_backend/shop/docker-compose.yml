@@ -1,0 +1,21 @@
+version: '3.8'
+
+name: shop_team
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: shop_team
+    restart: always
+    environment:
+      POSTGRES_DB: shoptm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1004
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./shoptm.sql:/docker-entrypoint-initdb.d/shoptm.sql
+
+volumes:
+  postgres_data:
