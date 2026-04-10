@@ -49,8 +49,27 @@ public class Product {
 
     @Column(name = "image_url", length = 500)
     private String imageUrl;
-    // 이미지 저장 경로 ex) /uploads/products/파일명.jpg
-    // MultipartFile 업로드 후 서버 저장 경로를 여기에 저장
+    // 대표 이미지 경로 (목록/썸네일용)
+
+    @Column(name = "image_urls", length = 2000)
+    private String imageUrls;
+    // 다중 이미지 경로 (콤마 구분)
+    // ex) /uploads/products/a.jpg,/uploads/products/b.jpg,/uploads/products/c.jpg
+
+    @Column(length = 50)
+    private String size;           // 사이즈 (S, M, L, XL, FREE 등)
+
+    @Column(length = 10)
+    private String gender;         // 성별 (남성, 여성, 공용)
+
+    @Column(length = 50)
+    private String brand;          // 브랜드 (BEANPOLE, CARHARTT, LEVI'S, DICKIES)
+
+    @Column
+    private Integer discountRate;   // 할인율 (% 단위, null이면 할인 없음)
+
+    @Column
+    private Integer originalPrice;  // 원래 가격 (할인 전)
 
     @Builder.Default
     @Column(nullable = false)

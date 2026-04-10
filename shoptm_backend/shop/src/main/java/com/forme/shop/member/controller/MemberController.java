@@ -27,12 +27,11 @@ public class MemberController {
         return ResponseEntity.ok(memberService.register(dto));
     }
     // 로그인
-// POST /api/login
+    // POST /api/login → { token, id, email, name, role, grade }
     @PostMapping("/login")
-    public ResponseEntity<Map<String, String>> login(
+    public ResponseEntity<Map<String, Object>> login(
             @Valid @RequestBody MemberRequestDto.Login dto) {
-        String token = memberService.login(dto);
-        return ResponseEntity.ok(Map.of("token", token));  // JWT 토큰 반환
+        return ResponseEntity.ok(memberService.login(dto));
     }
 
 

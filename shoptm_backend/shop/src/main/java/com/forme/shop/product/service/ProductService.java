@@ -91,26 +91,48 @@ public class ProductService {
     // 메인 페이지 - 추천 3건
     // is_recommend = true AND is_active = true 인 상품 최신순 3건
     public List<ProductResponseDto> getRecommendProducts() {
-        return productRepository.findTop3ByIsRecommendTrueAndIsActiveTrueOrderByCreatedAtDesc()
+        return productRepository.findTop4ByIsRecommendTrueAndIsActiveTrueOrderByCreatedAtDesc()
                 .stream()
                 .map(ProductResponseDto::from)
                 .collect(Collectors.toList());
     }
 
-    // 상품 등록 (관리자) - 이미지 업로드 포함
-    // @RequestPart 로 JSON + 파일을 같이 받음
+    // 상품 등록 (관리자) - 다중 이미지 업로드
     @Transactional
     public ProductResponseDto createProduct(ProductRequestDto.Create dto,
-                                            MultipartFile image) throws IOException {
-        // 카테고리 존재 여부 확인
-        Category category = categoryRepository.findById(dto.getCategoryId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
+                                            List<MultipartFile> images) throws IOException {
+        // categoryId가 없으면 첫 번째 카테고리 사용
+        Long catId = dto.getCategoryId() != null ? dto.getCategoryId() : 1L;
+        Category category = categoryRepository.findById(catId)
+                .orElseGet(() -> categoryRepository.findAll().stream().findFirst()
+                        .orElseThrow(() -> new IllegalArgumentException("카테고리가 없습니다. 먼저 카테고리를 등록해주세요.")));
 
-        String imageUrl = null;
+        // 이미지 처리: dto에 URL이 있으면 우선 사용, 없으면 파일 업로드
+        String imageUrl = dto.getImageUrl();
+        String imageUrls = dto.getImageUrls();
+        if ((imageUrl == null || imageUrl.isBlank()) && images != null && !images.isEmpty()) {
+            List<String> urls = new java.util.ArrayList<>();
+            for (MultipartFile img : images) {
+                if (img != null && !img.isEmpty()) {
+                    urls.add(saveImage(img));
+                }
+            }
+            if (!urls.isEmpty()) {
+                imageUrl = urls.get(0); // 대표 이미지 = 첫 번째
+                imageUrls = String.join(",", urls);
+            }
+        }
 
-        // 이미지 파일이 있으면 업로드 처리
-        if (image != null && !image.isEmpty()) {
-            imageUrl = saveImage(image);
+        // 추천 등록 시 브랜드당 1개만 허용
+        if (Boolean.TRUE.equals(dto.getIsRecommend()) && dto.getBrand() != null) {
+            if (productRepository.existsByBrandAndIsRecommendTrueAndIsActiveTrue(dto.getBrand())) {
+                throw new IllegalArgumentException(dto.getBrand() + " 브랜드에 이미 추천 상품이 있습니다. 기존 추천을 해제하고 다시 시도해주세요.");
+            }
+        }
+
+        // ID 직접 지정 시 중복 체크
+        if (dto.getId() != null && productRepository.existsById(dto.getId())) {
+            throw new IllegalArgumentException("이미 존재하는 상품 ID입니다: " + dto.getId());
         }
 
         Product product = Product.builder()
@@ -120,44 +142,78 @@ public class ProductService {
                 .price(dto.getPrice())
                 .stock(dto.getStock())
                 .imageUrl(imageUrl)
+                .imageUrls(imageUrls)
+                .size(dto.getSize())
+                .gender(dto.getGender())
+                .brand(dto.getBrand())
+                .discountRate(dto.getDiscountRate())
+                .originalPrice(dto.getOriginalPrice())
                 .isNew(dto.getIsNew() != null ? dto.getIsNew() : false)
                 .isBest(dto.getIsBest() != null ? dto.getIsBest() : false)
                 .isRecommend(dto.getIsRecommend() != null ? dto.getIsRecommend() : false)
                 .build();
 
+        // ID 직접 지정
+        if (dto.getId() != null) {
+            product.setId(dto.getId());
+        }
+
         return ProductResponseDto.from(productRepository.save(product));
     }
 
-    // 상품 수정 (관리자)
-    // null 체크 후 값이 있을 때만 수정 (부분 수정 가능)
+    // 상품 수정 (관리자) - 다중 이미지 업로드
     @Transactional
     public ProductResponseDto updateProduct(Long id,
                                             ProductRequestDto.Update dto,
-                                            MultipartFile image) throws IOException {
+                                            List<MultipartFile> images) throws IOException {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
-        // 카테고리 변경 요청이 있으면 카테고리 교체
         if (dto.getCategoryId() != null) {
             Category category = categoryRepository.findById(dto.getCategoryId())
                     .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
             product.setCategory(category);
         }
 
+        // 추천 등록 시 브랜드당 1개만 허용 (자기 자신 제외)
+        if (Boolean.TRUE.equals(dto.getIsRecommend())) {
+            String brand = dto.getBrand() != null ? dto.getBrand() : product.getBrand();
+            if (brand != null) {
+                List<Product> existing = productRepository.findByBrandAndIsRecommendTrueAndIsActiveTrue(brand);
+                boolean hasDuplicate = existing.stream().anyMatch(p -> !p.getId().equals(id));
+                if (hasDuplicate) {
+                    throw new IllegalArgumentException(brand + " 브랜드에 이미 추천 상품이 있습니다. 기존 추천을 해제하고 다시 시도해주세요.");
+                }
+            }
+        }
+
         if (dto.getName()        != null) product.setName(dto.getName());
         if (dto.getDescription() != null) product.setDescription(dto.getDescription());
         if (dto.getPrice()       != null) product.setPrice(dto.getPrice());
         if (dto.getStock()       != null) product.setStock(dto.getStock());
+        if (dto.getSize()        != null) product.setSize(dto.getSize());
+        if (dto.getGender()      != null) product.setGender(dto.getGender());
+        if (dto.getBrand()       != null) product.setBrand(dto.getBrand());
+        if (dto.getDiscountRate()   != null) product.setDiscountRate(dto.getDiscountRate());
+        if (dto.getOriginalPrice()  != null) product.setOriginalPrice(dto.getOriginalPrice());
         if (dto.getIsNew()       != null) product.setIsNew(dto.getIsNew());
         if (dto.getIsBest()      != null) product.setIsBest(dto.getIsBest());
         if (dto.getIsRecommend() != null) product.setIsRecommend(dto.getIsRecommend());
 
         // 새 이미지가 있으면 기존 이미지 교체
-        if (image != null && !image.isEmpty()) {
-            product.setImageUrl(saveImage(image));
+        if (images != null && !images.isEmpty()) {
+            List<String> urls = new java.util.ArrayList<>();
+            for (MultipartFile img : images) {
+                if (img != null && !img.isEmpty()) {
+                    urls.add(saveImage(img));
+                }
+            }
+            if (!urls.isEmpty()) {
+                product.setImageUrl(urls.get(0));
+                product.setImageUrls(String.join(",", urls));
+            }
         }
 
-        // @Transactional 덕분에 save() 없이도 변경사항 자동 반영 (더티 체킹)
         return ProductResponseDto.from(product);
     }
 

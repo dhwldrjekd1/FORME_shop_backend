@@ -31,8 +31,12 @@ spring:
       password: none
 
 file:
-  upload-dir: /root/uploads
+  upload-dir: ./uploads
 
 jwt:
   secret: shoptmSecretKey256bitLongEnoughForHS256Algorithm!!
   expiration: 86400000
+
+toss:
+  client-key: test_ck_placeholder
+  secret-key: test_sk_placeholder

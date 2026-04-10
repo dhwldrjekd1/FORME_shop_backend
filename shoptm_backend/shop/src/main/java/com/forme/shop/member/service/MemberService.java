@@ -11,6 +11,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service                          // 스프링 빈으로 등록, 비즈니스 로직 담당
@@ -57,8 +58,9 @@ public class MemberService {
     private final JwtUtil jwtUtil;  // 필드에 추가
 
     // 로그인
+    // 응답에 token + 회원 식별/표시 정보 포함 (프론트가 마이페이지·Q&A 작성 등에 사용)
     @Transactional(readOnly = true)
-    public String login(MemberRequestDto.Login dto) {
+    public Map<String, Object> login(MemberRequestDto.Login dto) {
 
         // 이메일로 회원 조회
         Member member = memberRepository.findByEmail(dto.getEmail())
@@ -74,8 +76,18 @@ public class MemberService {
             throw new IllegalArgumentException("이메일 또는 비밀번호가 틀렸습니다.");
         }
 
-        // JWT 토큰 생성 후 반환
-        return jwtUtil.generateToken(member.getEmail(), member.getRole());
+        // JWT 토큰 생성
+        String token = jwtUtil.generateToken(member.getEmail(), member.getRole());
+
+        // 토큰 + 회원 정보 같이 반환
+        return Map.of(
+                "token", token,
+                "id", member.getId(),
+                "email", member.getEmail(),
+                "name", member.getName(),
+                "role", member.getRole(),
+                "grade", member.getGrade()
+        );
     }
 
     // 회원정보 수정
