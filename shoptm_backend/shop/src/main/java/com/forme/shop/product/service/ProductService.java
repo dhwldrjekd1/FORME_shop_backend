@@ -7,6 +7,7 @@ import com.forme.shop.product.entity.ProductSize;
 import com.forme.shop.product.repository.ProductRepository;
 import com.forme.shop.category.entity.Category;
 import com.forme.shop.category.repository.CategoryRepository;
+import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -26,6 +27,7 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
+    private final EntityManager entityManager;
 
     // application.yml 의 file.upload-dir 값 주입
     @Value("${file.upload-dir}")
@@ -146,6 +148,10 @@ public class ProductService {
                 .imageUrls(imageUrls)
                 .thumbnailUrl(dto.getThumbnailUrl())
                 .curatorImageUrl(dto.getCuratorImageUrl())
+                .colorName(dto.getColorName())
+                .colorHex(dto.getColorHex())
+                .features(dto.getFeatures())
+                .composition(dto.getComposition())
                 .size(dto.getSize())
                 .gender(dto.getGender())
                 .brand(dto.getBrand())
@@ -216,6 +222,10 @@ public class ProductService {
         if (dto.getOriginalPrice()  != null) product.setOriginalPrice(dto.getOriginalPrice());
         if (dto.getThumbnailUrl()   != null) product.setThumbnailUrl(dto.getThumbnailUrl());
         if (dto.getCuratorImageUrl() != null) product.setCuratorImageUrl(dto.getCuratorImageUrl());
+        if (dto.getColorName()      != null) product.setColorName(dto.getColorName());
+        if (dto.getColorHex()       != null) product.setColorHex(dto.getColorHex());
+        if (dto.getFeatures()       != null) product.setFeatures(dto.getFeatures());
+        if (dto.getComposition()    != null) product.setComposition(dto.getComposition());
 
         // 사이즈별 재고 갱신 (전체 교체)
         if (dto.getSizeStocks() != null) {
@@ -235,7 +245,15 @@ public class ProductService {
         if (dto.getIsBest()      != null) product.setIsBest(dto.getIsBest());
         if (dto.getIsRecommend() != null) product.setIsRecommend(dto.getIsRecommend());
 
-        // 새 이미지가 있으면 기존 이미지 교체
+        // 이미지 처리: dto에 URL이 있으면 우선 사용
+        if (dto.getImageUrl() != null && !dto.getImageUrl().isBlank()) {
+            product.setImageUrl(dto.getImageUrl());
+        }
+        if (dto.getImageUrls() != null && !dto.getImageUrls().isBlank()) {
+            product.setImageUrls(dto.getImageUrls());
+        }
+
+        // 파일 업로드가 있으면 기존 이미지 교체
         if (images != null && !images.isEmpty()) {
             List<String> urls = new java.util.ArrayList<>();
             for (MultipartFile img : images) {
@@ -258,7 +276,23 @@ public class ProductService {
     public void deleteProduct(Long id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
-        product.setIsActive(false);  // 비활성화 처리
+        productRepository.delete(product);  // DB에서 완전 삭제
+    }
+
+    // 상품 ID 변경 (네이티브 SQL)
+    @Transactional
+    public void changeProductId(Long oldId, Long newId) {
+        if (oldId.equals(newId)) throw new IllegalArgumentException("동일한 ID입니다.");
+        if (productRepository.existsById(newId)) throw new IllegalArgumentException("이미 존재하는 ID입니다: " + newId);
+        if (!productRepository.existsById(oldId)) throw new IllegalArgumentException("존재하지 않는 상품입니다: " + oldId);
+
+        // 외래키 제약조건 때문에 순서 중요: sizes → products
+        entityManager.createNativeQuery("UPDATE product_sizes SET product_id = :newId WHERE product_id = :oldId")
+                .setParameter("newId", newId).setParameter("oldId", oldId).executeUpdate();
+        entityManager.createNativeQuery("UPDATE products SET id = :newId WHERE id = :oldId")
+                .setParameter("newId", newId).setParameter("oldId", oldId).executeUpdate();
+        entityManager.createNativeQuery("SELECT setval('products_id_seq', (SELECT COALESCE(MAX(id), 1) FROM products))")
+                .getSingleResult();
     }
 
     // 이미지 파일 저장

@@ -80,20 +80,34 @@ public class FileController {
                     String relative = dir.toPath().relativize(p).toString().replace('\\', '/');
                     String url = urlPrefix + relative;
 
-                    // 그룹 = 브랜드 폴더명 추출
+                    // 그룹 = 브랜드/카테고리 폴더명 추출
                     String[] parts = relative.split("/");
-                    String group = parts.length > 1 ? groupPrefix + " · " + parts[0].toUpperCase() : groupPrefix;
+                    String group;
+                    if (parts.length > 2) {
+                        group = groupPrefix + " · " + parts[0].toUpperCase() + " · " + parts[1];
+                    } else if (parts.length > 1) {
+                        group = groupPrefix + " · " + parts[0].toUpperCase();
+                    } else {
+                        group = groupPrefix;
+                    }
 
-                    result.add(makeEntry(p.getFileName().toString(), url, group, p.toFile()));
+                    // 폴더 경로 포함
+                    String folder = parts.length > 1 ? String.join("/", java.util.Arrays.copyOf(parts, parts.length - 1)) : "";
+                    result.add(makeEntry(p.getFileName().toString(), url, group, folder, p.toFile()));
                 });
         } catch (Exception ignored) {}
     }
 
     private Map<String, Object> makeEntry(String name, String url, String group, File f) {
+        return makeEntry(name, url, group, "", f);
+    }
+
+    private Map<String, Object> makeEntry(String name, String url, String group, String folder, File f) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("name", name);
         m.put("url", url);
         m.put("group", group);
+        m.put("folder", folder);
         m.put("size", f.length());
         return m;
     }

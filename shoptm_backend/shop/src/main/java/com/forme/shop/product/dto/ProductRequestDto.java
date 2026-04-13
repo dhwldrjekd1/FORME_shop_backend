@@ -50,6 +50,10 @@ public class ProductRequestDto {
         private String imageUrls;       // 서버 다중 이미지 URL (콤마 구분)
         private String thumbnailUrl;    // 썸네일 이미지 URL
         private String curatorImageUrl; // 큐레이터 노출 이미지 URL
+        private String colorName;
+        private String colorHex;
+        private String features;        // 줄바꿈 구분
+        private String composition;     // 줄바꿈 구분
 
         // 사이즈별 재고 [{ "size": "M", "stock": 10 }, ...]
         private java.util.List<SizeStock> sizeStocks;
@@ -74,10 +78,16 @@ public class ProductRequestDto {
         private String brand;
         private Integer discountRate;
         private Integer originalPrice;
+        private String imageUrl;
+        private String imageUrls;
         private String thumbnailUrl;
         private String curatorImageUrl;
+        private String colorName;
+        private String colorHex;
+        private String features;
+        private String composition;
         private java.util.List<SizeStock> sizeStocks;
-        private String status;       // ON_SALE / SOLD_OUT / HIDDEN
+        private String status;
         private Boolean isNew;
         private Boolean isBest;
         private Boolean isRecommend;

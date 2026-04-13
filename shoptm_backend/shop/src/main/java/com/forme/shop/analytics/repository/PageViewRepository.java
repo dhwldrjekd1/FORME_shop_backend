@@ -7,23 +7,28 @@ import java.util.List;
 
 public interface PageViewRepository extends JpaRepository<PageView, Integer> {
 
-    @Query("SELECT p.pageName, AVG(p.duration), COUNT(p) FROM PageView p GROUP BY p.pageName ORDER BY AVG(p.duration) DESC")
+    // admin 페이지 제외
+    @Query("SELECT p.pageName, AVG(p.duration), COUNT(p) FROM PageView p WHERE p.pagePath NOT LIKE '/admin%' GROUP BY p.pageName ORDER BY AVG(p.duration) DESC")
     List<Object[]> findPageStats();
 
-    @Query("SELECT p.loginId, COUNT(p), AVG(p.duration) FROM PageView p WHERE p.loginId IS NOT NULL GROUP BY p.loginId ORDER BY COUNT(p) DESC")
+    @Query("SELECT p.loginId, COUNT(p), AVG(p.duration) FROM PageView p WHERE p.loginId IS NOT NULL AND p.pagePath NOT LIKE '/admin%' GROUP BY p.loginId ORDER BY COUNT(p) DESC")
     List<Object[]> findUserStats();
 
-    @Query(value = "SELECT EXTRACT(HOUR FROM created_at) AS hour, COUNT(*) AS cnt FROM page_views GROUP BY hour ORDER BY hour", nativeQuery = true)
+    @Query(value = "SELECT EXTRACT(HOUR FROM created_at) AS hour, COUNT(*) AS cnt FROM page_views WHERE page_path NOT LIKE '/admin%' GROUP BY hour ORDER BY hour", nativeQuery = true)
     List<Object[]> findHourlyStats();
+
+    // 상품 상세 페이지별 체류시간 (product-detail만)
+    @Query("SELECT p.pagePath, AVG(p.duration), COUNT(p) FROM PageView p WHERE p.pageName = 'product-detail' GROUP BY p.pagePath ORDER BY AVG(p.duration) DESC")
+    List<Object[]> findProductDetailStats();
 
     List<PageView> findTop50ByOrderByCreatedAtDesc();
 
-    @Query("SELECT COUNT(DISTINCT p.pageName) FROM PageView p")
+    @Query("SELECT COUNT(DISTINCT p.pageName) FROM PageView p WHERE p.pagePath NOT LIKE '/admin%'")
     Long countDistinctPages();
 
-    @Query("SELECT COUNT(DISTINCT p.loginId) FROM PageView p WHERE p.loginId IS NOT NULL")
+    @Query("SELECT COUNT(DISTINCT p.loginId) FROM PageView p WHERE p.loginId IS NOT NULL AND p.pagePath NOT LIKE '/admin%'")
     Long countDistinctUsers();
 
-    @Query("SELECT COALESCE(AVG(p.duration), 0) FROM PageView p")
+    @Query("SELECT COALESCE(AVG(p.duration), 0) FROM PageView p WHERE p.pagePath NOT LIKE '/admin%'")
     Double avgDuration();
 }

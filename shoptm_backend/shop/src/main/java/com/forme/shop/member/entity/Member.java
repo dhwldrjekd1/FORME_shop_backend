@@ -41,6 +41,15 @@ public class Member {
     @Column(length = 255)
     private String address;        // 주소 (선택 입력)
 
+    @Column
+    private Double height;         // 키 (cm)
+
+    @Column
+    private Double weight;         // 몸무게 (kg)
+
+    @Column(length = 20)
+    private String fit;            // 선호 핏 (slim, standard, wide)
+
     @Builder.Default
     @Column(nullable = false, length = 20)
     private String role = "ROLE_USER";
