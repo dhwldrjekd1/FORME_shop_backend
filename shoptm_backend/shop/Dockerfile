@@ -55,6 +55,11 @@ WORKDIR /app
 # 빌드된 jar 만 복사
 COPY --from=backend /build/build/libs/*.jar app.jar
 
+# 이미지 폴더를 컨테이너에 직접 복사 (FileController에서 스캔용)
+# public/ 폴더 내용이 dist/에 복사되므로 여기서 가져옴
+COPY --from=frontend /build/public/images /app/static-images
+COPY --from=frontend /build/public/new /app/static-new
+
 EXPOSE 8302
 
 # Spring Boot 가 jar 안의 static 리소스를 자동 서빙

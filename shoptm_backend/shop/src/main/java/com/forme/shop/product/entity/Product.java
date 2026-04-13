@@ -6,6 +6,8 @@ import lombok.*;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 상품 엔티티
@@ -54,10 +56,22 @@ public class Product {
     @Column(name = "image_urls", length = 2000)
     private String imageUrls;
     // 다중 이미지 경로 (콤마 구분)
-    // ex) /uploads/products/a.jpg,/uploads/products/b.jpg,/uploads/products/c.jpg
+
+    @Column(name = "thumbnail_url", length = 500)
+    private String thumbnailUrl;
+    // 썸네일 이미지 (목록/카드용, null이면 imageUrl 사용)
+
+    @Column(name = "curator_image_url", length = 500)
+    private String curatorImageUrl;
+    // 큐레이터 노출 이미지 (메인 큐레이터 선택용, null이면 imageUrl 사용)
 
     @Column(length = 50)
-    private String size;           // 사이즈 (S, M, L, XL, FREE 등)
+    private String size;           // 레거시 (단일 사이즈, 하위 호환용)
+
+    // 사이즈별 재고 관리 (1:N)
+    @OneToMany(mappedBy = "product", cascade = CascadeType.ALL, orphanRemoval = true)
+    @Builder.Default
+    private List<ProductSize> sizes = new ArrayList<>();
 
     @Column(length = 10)
     private String gender;         // 성별 (남성, 여성, 공용)

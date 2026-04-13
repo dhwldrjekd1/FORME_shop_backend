@@ -50,15 +50,17 @@ services:
     ports:
       # 외부에 노출되는 유일한 포트. LAN 공개 시 이 포트만 방화벽 허용
       - "8302:8302"
+    volumes:
+      # PC의 실제 폴더와 연결 → 여기에 사진 넣으면 서버에서 바로 접근 가능
+      - C:/forme/uploads:/app/uploads
     environment:
-      # application.yml 의 값을 환경변수로 덮어쓰기
-      # 컨테이너 네트워크 안에서는 서비스명(postgres)으로 접근, 포트는 컨테이너 내부 5432
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/shoptm
       SPRING_DATASOURCE_USERNAME: postgres
       SPRING_DATASOURCE_PASSWORD: 1004
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
-      # JWT 시크릿은 환경마다 다르게 줄 수 있음 (운영에서는 .env 로 분리 권장)
       JWT_SECRET: shoptmSecretKey256bitLongEnoughForHS256Algorithm!!
+      # 업로드 경로를 컨테이너 내부로 지정
+      FILE_UPLOAD_DIR: /app/uploads
 
 volumes:
   postgres_data:

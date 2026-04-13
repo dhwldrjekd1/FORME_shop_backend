@@ -22,7 +22,10 @@ public class ProductResponseDto {
     private Integer stock;         // 재고 수량
     private String imageUrl;       // 대표 이미지
     private List<String> images;   // 다중 이미지 목록
-    private String size;           // 사이즈
+    private String thumbnailUrl;   // 썸네일 (목록용)
+    private String curatorImageUrl; // 큐레이터 노출용
+    private String size;           // 레거시 단일 사이즈
+    private List<SizeStockDto> sizeStocks; // 사이즈별 재고
     private String gender;         // 성별
     private String brand;          // 브랜드
     private Integer discountRate;  // 할인율
@@ -33,6 +36,13 @@ public class ProductResponseDto {
     private Boolean isActive;      // 활성 여부
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
+
+    @Getter @Builder
+    public static class SizeStockDto {
+        private Long id;
+        private String size;
+        private Integer stock;
+    }
 
     // Product 엔티티를 ProductResponseDto 로 변환하는 정적 메서드
     public static ProductResponseDto from(Product product) {
@@ -49,7 +59,14 @@ public class ProductResponseDto {
                 .images(product.getImageUrls() != null && !product.getImageUrls().isBlank()
                         ? Arrays.asList(product.getImageUrls().split(","))
                         : (product.getImageUrl() != null ? List.of(product.getImageUrl()) : List.of()))
+                .thumbnailUrl(product.getThumbnailUrl() != null ? product.getThumbnailUrl() : product.getImageUrl())
+                .curatorImageUrl(product.getCuratorImageUrl() != null ? product.getCuratorImageUrl() : product.getImageUrl())
                 .size(product.getSize())
+                .sizeStocks(product.getSizes() != null
+                        ? product.getSizes().stream()
+                            .map(s -> SizeStockDto.builder().id(s.getId()).size(s.getSize()).stock(s.getStock()).build())
+                            .collect(java.util.stream.Collectors.toList())
+                        : List.of())
                 .gender(product.getGender())
                 .brand(product.getBrand())
                 .discountRate(product.getDiscountRate())

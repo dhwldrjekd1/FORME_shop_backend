@@ -7,8 +7,17 @@ import lombok.Getter;
 import lombok.Setter;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public class ProductRequestDto {
+
+    // 사이즈별 재고 DTO
+    @Getter @Setter
+    public static class SizeStock {
+        private String size;    // XS, S, M, L, XL, XXL, 28, 30 등
+        private Integer stock;  // 해당 사이즈 재고
+    }
+
 
     // 상품 등록 요청 DTO (관리자)
     @Getter @Setter
@@ -39,6 +48,11 @@ public class ProductRequestDto {
         private Integer originalPrice;  // 할인 전 가격
         private String imageUrl;        // 서버 이미지 URL (직접 지정)
         private String imageUrls;       // 서버 다중 이미지 URL (콤마 구분)
+        private String thumbnailUrl;    // 썸네일 이미지 URL
+        private String curatorImageUrl; // 큐레이터 노출 이미지 URL
+
+        // 사이즈별 재고 [{ "size": "M", "stock": 10 }, ...]
+        private java.util.List<SizeStock> sizeStocks;
 
         private Boolean isNew       = false;  // 신상품 여부
         private Boolean isBest      = false;  // 베스트 여부
@@ -60,6 +74,9 @@ public class ProductRequestDto {
         private String brand;
         private Integer discountRate;
         private Integer originalPrice;
+        private String thumbnailUrl;
+        private String curatorImageUrl;
+        private java.util.List<SizeStock> sizeStocks;
         private String status;       // ON_SALE / SOLD_OUT / HIDDEN
         private Boolean isNew;
         private Boolean isBest;

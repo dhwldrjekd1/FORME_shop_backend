@@ -3,6 +3,7 @@ package com.forme.shop.product.service;
 import com.forme.shop.product.dto.ProductRequestDto;
 import com.forme.shop.product.dto.ProductResponseDto;
 import com.forme.shop.product.entity.Product;
+import com.forme.shop.product.entity.ProductSize;
 import com.forme.shop.product.repository.ProductRepository;
 import com.forme.shop.category.entity.Category;
 import com.forme.shop.category.repository.CategoryRepository;
@@ -143,6 +144,8 @@ public class ProductService {
                 .stock(dto.getStock())
                 .imageUrl(imageUrl)
                 .imageUrls(imageUrls)
+                .thumbnailUrl(dto.getThumbnailUrl())
+                .curatorImageUrl(dto.getCuratorImageUrl())
                 .size(dto.getSize())
                 .gender(dto.getGender())
                 .brand(dto.getBrand())
@@ -156,6 +159,21 @@ public class ProductService {
         // ID 직접 지정
         if (dto.getId() != null) {
             product.setId(dto.getId());
+        }
+
+        // 사이즈별 재고 저장
+        if (dto.getSizeStocks() != null && !dto.getSizeStocks().isEmpty()) {
+            for (var ss : dto.getSizeStocks()) {
+                ProductSize ps = ProductSize.builder()
+                        .product(product)
+                        .size(ss.getSize())
+                        .stock(ss.getStock() != null ? ss.getStock() : 0)
+                        .build();
+                product.getSizes().add(ps);
+            }
+            // 전체 재고 = 사이즈별 재고 합계
+            product.setStock(dto.getSizeStocks().stream()
+                    .mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum());
         }
 
         return ProductResponseDto.from(productRepository.save(product));
@@ -196,6 +214,23 @@ public class ProductService {
         if (dto.getBrand()       != null) product.setBrand(dto.getBrand());
         if (dto.getDiscountRate()   != null) product.setDiscountRate(dto.getDiscountRate());
         if (dto.getOriginalPrice()  != null) product.setOriginalPrice(dto.getOriginalPrice());
+        if (dto.getThumbnailUrl()   != null) product.setThumbnailUrl(dto.getThumbnailUrl());
+        if (dto.getCuratorImageUrl() != null) product.setCuratorImageUrl(dto.getCuratorImageUrl());
+
+        // 사이즈별 재고 갱신 (전체 교체)
+        if (dto.getSizeStocks() != null) {
+            product.getSizes().clear();
+            for (var ss : dto.getSizeStocks()) {
+                ProductSize ps = ProductSize.builder()
+                        .product(product)
+                        .size(ss.getSize())
+                        .stock(ss.getStock() != null ? ss.getStock() : 0)
+                        .build();
+                product.getSizes().add(ps);
+            }
+            product.setStock(dto.getSizeStocks().stream()
+                    .mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum());
+        }
         if (dto.getIsNew()       != null) product.setIsNew(dto.getIsNew());
         if (dto.getIsBest()      != null) product.setIsBest(dto.getIsBest());
         if (dto.getIsRecommend() != null) product.setIsRecommend(dto.getIsRecommend());
