@@ -67,21 +67,4 @@ public class AnalyticsService {
     public List<PageView> getRecentViews() {
         return pageViewRepository.findTop50ByOrderByCreatedAtDesc();
     }
-
-    // 상품 상세 페이지별 체류시간 (제품명 포함)
-    public List<Map<String, Object>> getProductDetailStats() {
-        List<Map<String, Object>> result = new ArrayList<>();
-        for (Object[] row : pageViewRepository.findProductDetailStats()) {
-            String path = (String) row[0]; // /products/405
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("pagePath", path);
-            // ID 추출
-            String idStr = path.replaceAll(".*/products/", "");
-            m.put("productId", idStr);
-            m.put("avgDuration", Math.round(((Number) row[1]).doubleValue() * 10.0) / 10.0);
-            m.put("views", ((Number) row[2]).longValue());
-            result.add(m);
-        }
-        return result;
-    }
 }

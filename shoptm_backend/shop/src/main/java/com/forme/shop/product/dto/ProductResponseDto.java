@@ -24,10 +24,6 @@ public class ProductResponseDto {
     private List<String> images;   // 다중 이미지 목록
     private String thumbnailUrl;   // 썸네일 (목록용)
     private String curatorImageUrl; // 큐레이터 노출용
-    private String colorName;
-    private String colorHex;
-    private List<String> features;
-    private List<String> compositionList;
     private String size;           // 레거시 단일 사이즈
     private List<SizeStockDto> sizeStocks; // 사이즈별 재고
     private String gender;         // 성별
@@ -65,12 +61,6 @@ public class ProductResponseDto {
                         : (product.getImageUrl() != null ? List.of(product.getImageUrl()) : List.of()))
                 .thumbnailUrl(product.getThumbnailUrl() != null ? product.getThumbnailUrl() : product.getImageUrl())
                 .curatorImageUrl(product.getCuratorImageUrl() != null ? product.getCuratorImageUrl() : product.getImageUrl())
-                .colorName(product.getColorName())
-                .colorHex(product.getColorHex())
-                .features(product.getFeatures() != null && !product.getFeatures().isBlank()
-                        ? Arrays.asList(product.getFeatures().split("\n")) : List.of())
-                .compositionList(product.getComposition() != null && !product.getComposition().isBlank()
-                        ? Arrays.asList(product.getComposition().split("\n")) : List.of())
                 .size(product.getSize())
                 .sizeStocks(product.getSizes() != null
                         ? product.getSizes().stream()

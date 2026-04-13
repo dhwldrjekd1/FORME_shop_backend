@@ -63,18 +63,6 @@ public class Product {
 
     @Column(name = "curator_image_url", length = 500)
     private String curatorImageUrl;
-
-    @Column(name = "color_name", length = 50)
-    private String colorName;      // 색상 이름 (예: Navy, Black, Ivory)
-
-    @Column(name = "color_hex", length = 10)
-    private String colorHex;       // 색상 코드 (예: #1a1a1a)
-
-    @Column(columnDefinition = "TEXT")
-    private String features;       // 상품 특징 (줄바꿈 구분)
-
-    @Column(columnDefinition = "TEXT")
-    private String composition;    // 소재/구성 (줄바꿈 구분)
     // 큐레이터 노출 이미지 (메인 큐레이터 선택용, null이면 imageUrl 사용)
 
     @Column(length = 50)

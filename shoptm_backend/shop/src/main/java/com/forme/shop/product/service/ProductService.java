@@ -148,10 +148,6 @@ public class ProductService {
                 .imageUrls(imageUrls)
                 .thumbnailUrl(dto.getThumbnailUrl())
                 .curatorImageUrl(dto.getCuratorImageUrl())
-                .colorName(dto.getColorName())
-                .colorHex(dto.getColorHex())
-                .features(dto.getFeatures())
-                .composition(dto.getComposition())
                 .size(dto.getSize())
                 .gender(dto.getGender())
                 .brand(dto.getBrand())
@@ -222,10 +218,6 @@ public class ProductService {
         if (dto.getOriginalPrice()  != null) product.setOriginalPrice(dto.getOriginalPrice());
         if (dto.getThumbnailUrl()   != null) product.setThumbnailUrl(dto.getThumbnailUrl());
         if (dto.getCuratorImageUrl() != null) product.setCuratorImageUrl(dto.getCuratorImageUrl());
-        if (dto.getColorName()      != null) product.setColorName(dto.getColorName());
-        if (dto.getColorHex()       != null) product.setColorHex(dto.getColorHex());
-        if (dto.getFeatures()       != null) product.setFeatures(dto.getFeatures());
-        if (dto.getComposition()    != null) product.setComposition(dto.getComposition());
 
         // 사이즈별 재고 갱신 (전체 교체)
         if (dto.getSizeStocks() != null) {

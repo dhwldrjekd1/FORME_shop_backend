@@ -52,9 +52,4 @@ public class AnalyticsController {
     public ResponseEntity<?> recentViews() {
         return ResponseEntity.ok(analyticsService.getRecentViews());
     }
-
-    @GetMapping("/products")
-    public ResponseEntity<?> productDetailStats() {
-        return ResponseEntity.ok(analyticsService.getProductDetailStats());
-    }
 }
