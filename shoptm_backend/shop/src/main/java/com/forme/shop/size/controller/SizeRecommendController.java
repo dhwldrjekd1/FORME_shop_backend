@@ -26,15 +26,12 @@ public class SizeRecommendController {
                 return ResponseEntity.badRequest().body(Map.of("success", false, "message", "몸무게는 30~200kg 범위로 입력해주세요."));
 
             SizeResponse res = sizeRecommendService.recommend(request);
-            Map<String, Object> body = new java.util.LinkedHashMap<>();
-            body.put("success", true);
-            body.put("recommendedSize", res.getRecommendedSize());
-            body.put("krSize", res.getKrSize());
-            body.put("brandSize", res.getBrandSize());
-            body.put("brandCountry", res.getBrandCountry());
-            body.put("message", res.getMessage());
-            body.put("sizeChart", res.getSizeChart());
-            return ResponseEntity.ok(body);
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "recommendedSize", res.getRecommendedSize(),
+                    "message", res.getMessage(),
+                    "sizeChart", res.getSizeChart()
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
         }

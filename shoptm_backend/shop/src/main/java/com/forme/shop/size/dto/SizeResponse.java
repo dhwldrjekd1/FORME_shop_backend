@@ -10,9 +10,6 @@ import java.util.Map;
 public class SizeResponse {
     private String recommendedSize;
     private String message;
-    private String krSize;           // 한국 사이즈
-    private String brandSize;        // 브랜드 국가 사이즈
-    private String brandCountry;     // US/UK/EU/KR
     private List<Map<String, String>> sizeChart;
 
     public SizeResponse() {}

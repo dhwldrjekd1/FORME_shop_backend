@@ -1,7 +1,6 @@
 package com.forme.shop.config;
 
 import java.io.IOException;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
@@ -12,9 +11,6 @@ import org.springframework.web.servlet.resource.PathResourceResolver;
 
 @Configuration  // 스프링 설정 클래스임을 선언
 public class WebConfig implements WebMvcConfigurer {
-
-    @Value("${file.upload-dir:./uploads}")
-    private String uploadDir;
 
     // CORS 설정
     // Vue.js (프론트엔드) 에서 Spring Boot (백엔드) API 호출 시 필요
@@ -35,11 +31,8 @@ public class WebConfig implements WebMvcConfigurer {
     // /uploads/** URL 로 서버에 저장된 이미지 파일 접근 가능하게 설정
     @Override
     public void addResourceHandlers(ResourceHandlerRegistry registry) {
-        // uploadDir 경로에 저장된 이미지를 /uploads/** URL로 서빙
-        String resolvedPath = uploadDir.endsWith("/") ? uploadDir : uploadDir + "/";
-        if (!resolvedPath.startsWith("file:")) resolvedPath = "file:" + resolvedPath;
         registry.addResourceHandler("/uploads/**")
-                .addResourceLocations(resolvedPath);
+                .addResourceLocations("file:./uploads/");  // 실제 파일 저장 경로
 
         // ─── Vue SPA 정적 리소스 + history mode 폴백 ───
         // /** 로 들어오는 모든 요청에 대해:

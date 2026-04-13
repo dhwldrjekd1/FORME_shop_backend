@@ -70,21 +70,24 @@ public class ProductController {
         return ResponseEntity.ok(productService.getRecommendProducts());
     }
 
-    // 상품 등록 (관리자) - 다중 이미지 업로드
+    // 상품 등록 (관리자) - 이미지 업로드 포함
+    // POST /api/admin/products
+    // @RequestPart: JSON + 파일을 같이 받을 때 사용
     @PostMapping("/admin/products")
     public ResponseEntity<ProductResponseDto> createProduct(
             @Valid @RequestPart ProductRequestDto.Create dto,
-            @RequestPart(required = false) List<MultipartFile> images) throws IOException {
-        return ResponseEntity.ok(productService.createProduct(dto, images));
+            @RequestPart(required = false) MultipartFile image) throws IOException {
+        return ResponseEntity.ok(productService.createProduct(dto, image));
     }
 
-    // 상품 수정 (관리자) - 다중 이미지 업로드
+    // 상품 수정 (관리자)
+    // PUT /api/admin/products/{id}
     @PutMapping("/admin/products/{id}")
     public ResponseEntity<ProductResponseDto> updateProduct(
             @PathVariable Long id,
             @RequestPart ProductRequestDto.Update dto,
-            @RequestPart(required = false) List<MultipartFile> images) throws IOException {
-        return ResponseEntity.ok(productService.updateProduct(id, dto, images));
+            @RequestPart(required = false) MultipartFile image) throws IOException {
+        return ResponseEntity.ok(productService.updateProduct(id, dto, image));
     }
 
     // 상품 삭제 (관리자)

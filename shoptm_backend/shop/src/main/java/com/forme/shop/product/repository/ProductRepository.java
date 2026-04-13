@@ -26,13 +26,7 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     // 메인 페이지 베스트 4건
     List<Product> findTop4ByIsBestTrueAndIsActiveTrueOrderByCreatedAtDesc();
 
-    // SELECT * FROM products WHERE is_recommend = true AND is_active = true ORDER BY created_at DESC LIMIT 4
-    // 메인 페이지 추천 4건 (브랜드당 1개)
-    List<Product> findTop4ByIsRecommendTrueAndIsActiveTrueOrderByCreatedAtDesc();
-
-    // 브랜드별 추천 상품 존재 여부 확인
-    boolean existsByBrandAndIsRecommendTrueAndIsActiveTrue(String brand);
-
-    // 브랜드별 추천 상품 조회 (추천 해제용)
-    List<Product> findByBrandAndIsRecommendTrueAndIsActiveTrue(String brand);
+    // SELECT * FROM products WHERE is_recommend = true AND is_active = true ORDER BY created_at DESC LIMIT 3
+    // 메인 페이지 추천 3건
+    List<Product> findTop3ByIsRecommendTrueAndIsActiveTrueOrderByCreatedAtDesc();
 }
