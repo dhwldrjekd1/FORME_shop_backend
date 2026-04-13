@@ -40,6 +40,9 @@ public class MemberService {
                 .name(dto.getName())
                 .phone(dto.getPhone())
                 .address(dto.getAddress())
+                .height(dto.getHeight())
+                .weight(dto.getWeight())
+                .fit(dto.getFit())
                 .build();
 
         // DB에 저장 후 DTO로 변환해서 반환
@@ -80,14 +83,17 @@ public class MemberService {
         String token = jwtUtil.generateToken(member.getEmail(), member.getRole());
 
         // 토큰 + 회원 정보 같이 반환
-        return Map.of(
-                "token", token,
-                "id", member.getId(),
-                "email", member.getEmail(),
-                "name", member.getName(),
-                "role", member.getRole(),
-                "grade", member.getGrade()
-        );
+        java.util.Map<String, Object> result = new java.util.LinkedHashMap<>();
+        result.put("token", token);
+        result.put("id", member.getId());
+        result.put("email", member.getEmail());
+        result.put("name", member.getName());
+        result.put("role", member.getRole());
+        result.put("grade", member.getGrade());
+        result.put("height", member.getHeight());
+        result.put("weight", member.getWeight());
+        result.put("fit", member.getFit());
+        return result;
     }
 
     // 회원정보 수정
@@ -101,11 +107,12 @@ public class MemberService {
         if (dto.getPhone()    != null) member.setPhone(dto.getPhone());
         if (dto.getAddress()  != null) member.setAddress(dto.getAddress());
         if (dto.getPassword() != null) {
-            // 비밀번호 변경 시에도 BCrypt로 암호화
             member.setPassword(passwordEncoder.encode(dto.getPassword()));
         }
+        if (dto.getHeight()   != null) member.setHeight(dto.getHeight());
+        if (dto.getWeight()   != null) member.setWeight(dto.getWeight());
+        if (dto.getFit()      != null) member.setFit(dto.getFit());
 
-        // @Transactional 덕분에 save() 없이도 변경사항 자동 반영 (더티 체킹)
         return MemberResponseDto.from(member);
     }
 
