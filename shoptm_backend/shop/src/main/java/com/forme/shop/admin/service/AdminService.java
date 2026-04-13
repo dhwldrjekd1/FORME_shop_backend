@@ -10,8 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDate;
-import java.util.*;
+import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
@@ -103,61 +102,6 @@ public class AdminService {
                                 .build())
                         .collect(Collectors.toList());
 
-        // =====================
-        // 일별 매출 (최근 7일)
-        // =====================
-        List<Map<String, Object>> dailySales = new ArrayList<>();
-        for (int i = 6; i >= 0; i--) {
-            LocalDate date = LocalDate.now().minusDays(i);
-            int dayRevenue = allOrders.stream()
-                    .filter(o -> !o.getStatus().equals("CANCELLED"))
-                    .filter(o -> o.getCreatedAt().toLocalDate().equals(date))
-                    .mapToInt(Orders::getTotalPrice)
-                    .sum();
-            long dayCount = allOrders.stream()
-                    .filter(o -> o.getCreatedAt().toLocalDate().equals(date))
-                    .count();
-            Map<String, Object> day = new LinkedHashMap<>();
-            day.put("date", date.toString());
-            day.put("label", (date.getMonthValue()) + "/" + date.getDayOfMonth());
-            day.put("revenue", dayRevenue);
-            day.put("orders", dayCount);
-            dailySales.add(day);
-        }
-
-        // =====================
-        // 주문 상태 분포
-        // =====================
-        Map<String, Long> orderStatusDist = new LinkedHashMap<>();
-        orderStatusDist.put("PAID", paidOrders);
-        orderStatusDist.put("PREPARING", allOrders.stream().filter(o -> o.getStatus().equals("PREPARING")).count());
-        orderStatusDist.put("SHIPPED", shippingOrders);
-        orderStatusDist.put("DELIVERED", deliveredOrders);
-        orderStatusDist.put("CANCELLED", cancelledOrders);
-
-        // =====================
-        // 브랜드별 매출
-        // =====================
-        // 주문 아이템에서 브랜드별 매출 집계
-        List<Map<String, Object>> brandSales = new ArrayList<>();
-        Map<String, Integer> brandRevMap = new LinkedHashMap<>();
-        allOrders.stream()
-                .filter(o -> !o.getStatus().equals("CANCELLED"))
-                .flatMap(o -> o.getOrderItems().stream())
-                .forEach(item -> {
-                    String brand = item.getProduct() != null && item.getProduct().getBrand() != null
-                            ? item.getProduct().getBrand() : "기타";
-                    brandRevMap.merge(brand, item.getUnitPrice() * item.getQuantity(), Integer::sum);
-                });
-        int maxBrandRev = brandRevMap.values().stream().mapToInt(Integer::intValue).max().orElse(1);
-        brandRevMap.forEach((brand, rev) -> {
-            Map<String, Object> m = new LinkedHashMap<>();
-            m.put("brand", brand);
-            m.put("revenue", rev);
-            m.put("pct", Math.round((double) rev / maxBrandRev * 100));
-            brandSales.add(m);
-        });
-
         // 통계 데이터 DTO 로 반환
         return DashboardResponseDto.builder()
                 .totalMembers(totalMembers)
@@ -173,9 +117,6 @@ public class AdminService {
                 .cancelledOrders(cancelledOrders)
                 .totalRevenue(totalRevenue)
                 .recentOrders(recentOrders)
-                .dailySales(dailySales)
-                .orderStatusDist(orderStatusDist)
-                .brandSales(brandSales)
                 .build();
     }
 

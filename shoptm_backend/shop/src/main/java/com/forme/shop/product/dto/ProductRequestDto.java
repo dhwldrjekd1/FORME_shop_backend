@@ -74,8 +74,6 @@ public class ProductRequestDto {
         private String brand;
         private Integer discountRate;
         private Integer originalPrice;
-        private String imageUrl;
-        private String imageUrls;
         private String thumbnailUrl;
         private String curatorImageUrl;
         private java.util.List<SizeStock> sizeStocks;

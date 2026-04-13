@@ -24,11 +24,9 @@ public class MemberRequestDto {
 
         @NotBlank(message = "이름을 입력해주세요.")
         private String name;
+        // 선택 입력
         private String phone;
         private String address;
-        private Double height;     // 키 (cm) - 필수
-        private Double weight;     // 몸무게 (kg) - 필수
-        private String fit;        // 선호 핏 (slim, standard, wide) - 필수
     }
 
     // 로그인 요청 시 받을 데이터
@@ -49,9 +47,6 @@ public class MemberRequestDto {
         private String name;
         private String phone;
         private String address;
-        private String password;
-        private Double height;
-        private Double weight;
-        private String fit;
+        private String password;  // 비밀번호 변경 시에만 전달
     }
 }

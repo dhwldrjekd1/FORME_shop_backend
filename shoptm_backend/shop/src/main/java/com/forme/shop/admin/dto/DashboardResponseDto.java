@@ -3,7 +3,6 @@ package com.forme.shop.admin.dto;
 import lombok.Builder;
 import lombok.Getter;
 import java.util.List;
-import java.util.Map;
 
 // 관리자 대시보드 응답 DTO
 // 매출, 회원, 주문, 상품 통계를 한번에 반환
@@ -34,15 +33,6 @@ public class DashboardResponseDto {
 
     // 최근 주문 목록 (5건)
     private List<RecentOrderDto> recentOrders;
-
-    // 일별 매출 (최근 7일)
-    private List<Map<String, Object>> dailySales;
-
-    // 주문 상태 분포
-    private Map<String, Long> orderStatusDist;
-
-    // 브랜드별 매출
-    private List<Map<String, Object>> brandSales;
 
     // 최근 주문 간략 정보
     @Getter

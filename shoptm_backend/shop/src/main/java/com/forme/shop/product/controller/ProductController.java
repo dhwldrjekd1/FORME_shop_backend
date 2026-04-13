@@ -94,16 +94,4 @@ public class ProductController {
         productService.deleteProduct(id);
         return ResponseEntity.noContent().build();
     }
-
-    // 상품 ID 변경 (관리자)
-    // PATCH /api/admin/products/{id}/change-id?newId=501
-    @PatchMapping("/admin/products/{id}/change-id")
-    public ResponseEntity<?> changeProductId(@PathVariable Long id, @RequestParam Long newId) {
-        try {
-            productService.changeProductId(id, newId);
-            return ResponseEntity.ok(java.util.Map.of("success", true, "message", id + " → " + newId + " 변경 완료"));
-        } catch (Exception e) {
-            return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", e.getMessage()));
-        }
-    }
 }

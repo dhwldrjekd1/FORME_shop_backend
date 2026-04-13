@@ -17,9 +17,6 @@ public class MemberResponseDto {
     private String name;
     private String phone;
     private String address;
-    private Double height;
-    private Double weight;
-    private String fit;
     private String role;
     private String grade;
     private Boolean isActive;
@@ -35,9 +32,6 @@ public class MemberResponseDto {
                 .name(member.getName())
                 .phone(member.getPhone())
                 .address(member.getAddress())
-                .height(member.getHeight())
-                .weight(member.getWeight())
-                .fit(member.getFit())
                 .role(member.getRole())
                 .grade(member.getGrade())
                 .isActive(member.getIsActive())
