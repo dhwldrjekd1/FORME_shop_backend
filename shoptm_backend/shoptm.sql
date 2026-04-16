@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict 5VJWAOdOJmPwR7Uoaa1DIIDdYS6WbHEOfbHNKEvEZEjoN42LxWTLfIgPKNolS7S
+\restrict qWN4pclYJ2kd6nQWjdkq5lpBp5gPzxj1WsNSohh0ZL1O62aTXHrtbVN99Sv9THP
 
 -- Dumped from database version 16.13 (Debian 16.13-1.pgdg13+1)
 -- Dumped by pg_dump version 16.13 (Debian 16.13-1.pgdg13+1)
@@ -859,6 +859,8 @@ COPY public.page_views (id, created_at, duration, login_id, page_name, page_path
 120	2026-04-13 14:00:41.38412	7	admin@forme.com	levis	/levis
 121	2026-04-13 14:00:55.298285	15	admin@forme.com	dickies	/dickies
 122	2026-04-13 14:13:34.754092	499	admin@forme.com	product-detail	/products/407
+123	2026-04-16 04:10:28.784888	6	admin@forme.com	login	/login
+124	2026-04-16 04:10:34.396225	6	admin@forme.com	home	/
 \.
 
 
@@ -1188,7 +1190,7 @@ SELECT pg_catalog.setval('public.orders_id_seq', 1, false);
 -- Name: page_views_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.page_views_id_seq', 122, true);
+SELECT pg_catalog.setval('public.page_views_id_seq', 124, true);
 
 
 --
@@ -1550,5 +1552,5 @@ ALTER TABLE ONLY public.reviews
 -- PostgreSQL database dump complete
 --
 
-\unrestrict 5VJWAOdOJmPwR7Uoaa1DIIDdYS6WbHEOfbHNKEvEZEjoN42LxWTLfIgPKNolS7S
+\unrestrict qWN4pclYJ2kd6nQWjdkq5lpBp5gPzxj1WsNSohh0ZL1O62aTXHrtbVN99Sv9THP
 
