@@ -40,6 +40,9 @@ public class OrderItem {
 
     @Column(nullable = false)
     private Integer unitPrice;
+
+    @Column(length = 20)
+    private String size;           // 주문 사이즈
     // 주문 당시 상품 단가 스냅샷
     // 상품 가격이 나중에 바뀌어도 주문 당시 가격이 여기 저장됨
     // 총 금액 = unitPrice * quantity 로 계산

@@ -36,10 +36,17 @@ public class ReviewController {
     // 리뷰 작성 (일반회원)
     // POST /api/members/{memberId}/reviews
     @PostMapping("/members/{memberId}/reviews")
-    public ResponseEntity<ReviewResponseDto> createReview(
+    public ResponseEntity<?> createReview(
             @PathVariable Long memberId,
             @Valid @RequestBody ReviewRequestDto.Create dto) {
-        return ResponseEntity.ok(reviewService.createReview(memberId, dto));
+        try {
+            return ResponseEntity.ok(reviewService.createReview(memberId, dto));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(java.util.Map.of(
+                "message", "리뷰 작성 실패: " + e.getClass().getSimpleName() + " - " + e.getMessage()
+            ));
+        }
     }
 
     // 리뷰 수정 (일반회원)
@@ -65,6 +72,22 @@ public class ReviewController {
     @GetMapping("/admin/reviews")
     public ResponseEntity<List<ReviewResponseDto>> getAllReviews() {
         return ResponseEntity.ok(reviewService.getAllReviews());
+    }
+
+    // 관리자 - 리뷰 답글
+    // POST /api/admin/reviews/{reviewId}/reply
+    @PostMapping("/admin/reviews/{reviewId}/reply")
+    public ResponseEntity<ReviewResponseDto> replyReview(
+            @PathVariable Long reviewId,
+            @RequestBody java.util.Map<String, String> body) {
+        return ResponseEntity.ok(reviewService.replyReview(reviewId, body.get("reply")));
+    }
+
+    // 관리자 - 답글 삭제
+    // DELETE /api/admin/reviews/{reviewId}/reply
+    @DeleteMapping("/admin/reviews/{reviewId}/reply")
+    public ResponseEntity<ReviewResponseDto> deleteReply(@PathVariable Long reviewId) {
+        return ResponseEntity.ok(reviewService.replyReview(reviewId, null));
     }
 
     // 관리자 - 리뷰 삭제

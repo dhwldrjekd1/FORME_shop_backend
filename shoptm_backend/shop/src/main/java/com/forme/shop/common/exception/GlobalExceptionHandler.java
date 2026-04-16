@@ -70,16 +70,31 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    // JSON 파싱 오류
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponseDto> handleJsonParseException(
+            org.springframework.http.converter.HttpMessageNotReadableException ex) {
+        ex.printStackTrace();
+        String detail = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
+        return ResponseEntity
+                .status(HttpStatus.BAD_REQUEST)
+                .body(ErrorResponseDto.builder()
+                        .status(400)
+                        .message("JSON 파싱 오류: " + detail)
+                        .timestamp(LocalDateTime.now())
+                        .build());
+    }
+
     // 그 외 예상치 못한 예외 처리
     // 500 Internal Server Error 반환
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseDto> handleException(Exception ex) {
-
+        ex.printStackTrace();  // 서버 콘솔에 실제 에러 출력
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)  // 500
                 .body(ErrorResponseDto.builder()
                         .status(500)
-                        .message("서버 오류가 발생했습니다.")
+                        .message("서버 오류: " + ex.getClass().getSimpleName() + " - " + ex.getMessage())
                         .timestamp(LocalDateTime.now())
                         .build());
     }

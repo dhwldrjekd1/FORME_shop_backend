@@ -49,7 +49,7 @@ public class ProductRequestDto {
         private String imageUrl;        // 서버 이미지 URL (직접 지정)
         private String imageUrls;       // 서버 다중 이미지 URL (콤마 구분)
         private String thumbnailUrl;    // 썸네일 이미지 URL
-        private String curatorImageUrl; // 큐레이터 노출 이미지 URL
+        private String curatorImageUrl; // 큐레이터 노출 이미지 URL (등록 시 직접 지정)
         private String colorName;
         private String colorHex;
         private String features;        // 줄바꿈 구분
@@ -65,9 +65,10 @@ public class ProductRequestDto {
 
     // 상품 수정 요청 DTO (관리자)
     // 수정할 항목만 보내면 되므로 전부 선택 입력
+    // 추천(큐레이터)은 전용 API로 분리: PATCH /admin/products/{id}/recommend
     @Getter @Setter
     public static class Update {
-        private Long categoryId;       // 카테고리 변경 시 사용
+        private Long categoryId;
         private String name;
         private String description;
         private Integer price;
@@ -81,7 +82,6 @@ public class ProductRequestDto {
         private String imageUrl;
         private String imageUrls;
         private String thumbnailUrl;
-        private String curatorImageUrl;
         private String colorName;
         private String colorHex;
         private String features;
@@ -90,6 +90,5 @@ public class ProductRequestDto {
         private String status;
         private Boolean isNew;
         private Boolean isBest;
-        private Boolean isRecommend;
     }
 }

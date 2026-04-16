@@ -58,22 +58,75 @@ public class OrderService {
             // 재고 차감
             product.setStock(product.getStock() - itemDto.getQuantity());
 
-            // 주문 상세 생성
+            // 세일 할인 적용된 단가 계산
+            int unitPrice = product.getPrice();
+            if (product.getDiscountRate() != null && product.getDiscountRate() > 0) {
+                unitPrice = (int) Math.round(product.getPrice() * (1 - product.getDiscountRate() / 100.0));
+            }
+
+            // 등급 할인 적용
+            int gradeDiscount = getGradeDiscount(member.getGrade());
+            if (gradeDiscount > 0) {
+                unitPrice = (int) Math.round(unitPrice * (1 - gradeDiscount / 100.0));
+            }
+
             OrderItem orderItem = OrderItem.builder()
                     .orders(orders)
                     .product(product)
                     .quantity(itemDto.getQuantity())
-                    .unitPrice(product.getPrice())  //  price → unitPrice 로 변경
+                    .unitPrice(unitPrice)
+                    .size(itemDto.getSize())
                     .build();
 
             orders.getOrderItems().add(orderItem);
 
-            // 총액 계산 (단가 * 수량)
-            totalPrice += product.getPrice() * itemDto.getQuantity();  //  Integer 덧셈
+            totalPrice += unitPrice * itemDto.getQuantity();
         }
 
-        orders.setTotalPrice(totalPrice);  // 총액 설정
-        return OrderResponseDto.from(orderRepository.save(orders));
+        orders.setTotalPrice(totalPrice);
+        OrderResponseDto result = OrderResponseDto.from(orderRepository.save(orders));
+
+        // 누적 구매 금액 기반 등급 자동 업그레이드
+        updateMemberGrade(member);
+
+        return result;
+    }
+
+    // 등급별 할인율
+    private int getGradeDiscount(String grade) {
+        if (grade == null) return 0;
+        return switch (grade.toUpperCase()) {
+            case "SILVER" -> 5;
+            case "GOLD" -> 8;
+            case "VIP" -> 12;
+            default -> 0;
+        };
+    }
+
+    // 누적 구매 금액 계산 → 등급 자동 변경
+    private void updateMemberGrade(Member member) {
+        // 취소 제외 전체 주문 금액 합산
+        int totalSpent = orderRepository.findByMemberIdOrderByCreatedAtDesc(member.getId())
+                .stream()
+                .filter(o -> !"CANCELLED".equals(o.getStatus()))
+                .mapToInt(Orders::getTotalPrice)
+                .sum();
+
+        String newGrade;
+        if (totalSpent >= 1500000) {
+            newGrade = "VIP";        // 150만원 이상
+        } else if (totalSpent >= 1000000) {
+            newGrade = "GOLD";       // 100만원 이상
+        } else if (totalSpent >= 500000) {
+            newGrade = "SILVER";     // 50만원 이상
+        } else {
+            newGrade = "BRONZE";     // 50만원 미만
+        }
+
+        if (!newGrade.equals(member.getGrade())) {
+            member.setGrade(newGrade);
+            // @Transactional이므로 자동 저장
+        }
     }
 
     // 내 주문 목록 조회 (일반회원)

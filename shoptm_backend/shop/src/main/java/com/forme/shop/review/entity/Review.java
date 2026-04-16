@@ -18,8 +18,7 @@ import java.time.LocalDateTime;
  * - 테이블명: reviews
  */
 @Entity
-@Table(name = "reviews",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"member_id", "order_id", "product_id"}))
+@Table(name = "reviews")
 // 주문 1건당 상품 1개 리뷰 제한
 @Getter @Setter
 @NoArgsConstructor
@@ -46,7 +45,7 @@ public class Review {
     // 구매 확인용 주문 참조
     // 이 주문을 통해 실제로 구매했는지 검증할 때 사용
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "order_id", nullable = false)
+    @JoinColumn(name = "order_id", nullable = true)
     private Orders orders;
 
     @Column(nullable = false)
@@ -56,6 +55,12 @@ public class Review {
 
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;        // 리뷰 내용
+
+    @Column(columnDefinition = "TEXT")
+    private String reply;          // 관리자 답글
+
+    @Column
+    private LocalDateTime repliedAt; // 답글 작성 시간
 
     @Builder.Default
     @Column(nullable = false)

@@ -46,6 +46,9 @@ public class Cart {
     @Column(nullable = false)
     private Integer quantity = 1;  // 수량 기본값 1, 최소 1개 이상
 
+    @Column(length = 20)
+    private String size;  // 선택한 사이즈
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;

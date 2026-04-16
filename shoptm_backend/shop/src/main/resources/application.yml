@@ -38,5 +38,5 @@ jwt:
   expiration: 86400000
 
 toss:
-  client-key: test_ck_placeholder
-  secret-key: test_sk_placeholder
+  client-key: ${TOSS_CLIENT_KEY:test_ck_placeholder}
+  secret-key: ${TOSS_SECRET_KEY:test_sk_placeholder}

@@ -14,22 +14,31 @@ public class CartResponseDto {
     private Long productId;
     private String productName;
     private String productImageUrl;
-    private Integer productPrice;   // ✅ BigDecimal → Integer
+    private Integer productPrice;   // 할인 적용된 단가
+    private Integer originalPrice;  // 정가
+    private Integer discountRate;   // 할인율
     private Integer quantity;
-    private Integer totalPrice;     // ✅ BigDecimal → Integer (가격 * 수량)
+    private String size;            // 선택한 사이즈
+    private Integer totalPrice;     // 단가 * 수량
     private LocalDateTime createdAt;
 
     // Cart 엔티티를 CartResponseDto 로 변환하는 정적 메서드
     public static CartResponseDto from(Cart cart) {
+        int origPrice = cart.getProduct().getPrice();
+        int discount = cart.getProduct().getDiscountRate() != null ? cart.getProduct().getDiscountRate() : 0;
+        int salePrice = discount > 0 ? (int)(origPrice * (100 - discount) / 100.0) : origPrice;
+
         return CartResponseDto.builder()
                 .id(cart.getId())
                 .productId(cart.getProduct().getId())
                 .productName(cart.getProduct().getName())
                 .productImageUrl(cart.getProduct().getImageUrl())
-                .productPrice(cart.getProduct().getPrice())
+                .productPrice(salePrice)
+                .originalPrice(origPrice)
+                .discountRate(discount)
                 .quantity(cart.getQuantity())
-                // 총 금액 = 상품 가격 * 수량 (Integer 곱셈)
-                .totalPrice(cart.getProduct().getPrice() * cart.getQuantity())
+                .size(cart.getSize())
+                .totalPrice(salePrice * cart.getQuantity())
                 .createdAt(cart.getCreatedAt())
                 .build();
     }

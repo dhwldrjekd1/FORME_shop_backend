@@ -61,6 +61,7 @@ public class CartService {
                 .member(member)
                 .product(product)
                 .quantity(dto.getQuantity())
+                .size(dto.getSize())
                 .build();
 
         return CartResponseDto.from(cartRepository.save(cart));

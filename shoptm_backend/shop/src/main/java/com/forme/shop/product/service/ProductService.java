@@ -91,13 +91,21 @@ public class ProductService {
                 .collect(Collectors.toList());
     }
 
-    // 메인 페이지 - 추천 3건
-    // is_recommend = true AND is_active = true 인 상품 최신순 3건
+    // 메인 페이지 - 추천 상품 (브랜드 순서 고정: BEANPOLE → CARHARTT → LEVI'S → DICKIES)
+    private static final List<String> BRAND_ORDER = List.of("BEANPOLE", "CARHARTT", "LEVI'S", "DICKIES");
+
     public List<ProductResponseDto> getRecommendProducts() {
-        return productRepository.findTop4ByIsRecommendTrueAndIsActiveTrueOrderByCreatedAtDesc()
+        List<ProductResponseDto> list = productRepository.findByIsRecommendTrueAndIsActiveTrueOrderByIdAsc()
                 .stream()
                 .map(ProductResponseDto::from)
                 .collect(Collectors.toList());
+        // 브랜드 순서대로 정렬
+        list.sort((a, b) -> {
+            int ia = BRAND_ORDER.indexOf(a.getBrand());
+            int ib = BRAND_ORDER.indexOf(b.getBrand());
+            return Integer.compare(ia < 0 ? 99 : ia, ib < 0 ? 99 : ib);
+        });
+        return list;
     }
 
     // 상품 등록 (관리자) - 다중 이미지 업로드
@@ -121,15 +129,17 @@ public class ProductService {
                 }
             }
             if (!urls.isEmpty()) {
-                imageUrl = urls.get(0); // 대표 이미지 = 첫 번째
+                imageUrl = urls.get(0);
                 imageUrls = String.join(",", urls);
             }
         }
 
-        // 추천 등록 시 브랜드당 1개만 허용
+        // 추천 등록 시 같은 브랜드의 기존 추천 자동 해제
         if (Boolean.TRUE.equals(dto.getIsRecommend()) && dto.getBrand() != null) {
-            if (productRepository.existsByBrandAndIsRecommendTrueAndIsActiveTrue(dto.getBrand())) {
-                throw new IllegalArgumentException(dto.getBrand() + " 브랜드에 이미 추천 상품이 있습니다. 기존 추천을 해제하고 다시 시도해주세요.");
+            List<Product> existing = productRepository.findByBrandAndIsRecommendTrueAndIsActiveTrue(dto.getBrand());
+            for (Product p : existing) {
+                p.setIsRecommend(false);
+                p.setCuratorImageUrl(null);
             }
         }
 
@@ -199,18 +209,6 @@ public class ProductService {
             product.setCategory(category);
         }
 
-        // 추천 등록 시 브랜드당 1개만 허용 (자기 자신 제외)
-        if (Boolean.TRUE.equals(dto.getIsRecommend())) {
-            String brand = dto.getBrand() != null ? dto.getBrand() : product.getBrand();
-            if (brand != null) {
-                List<Product> existing = productRepository.findByBrandAndIsRecommendTrueAndIsActiveTrue(brand);
-                boolean hasDuplicate = existing.stream().anyMatch(p -> !p.getId().equals(id));
-                if (hasDuplicate) {
-                    throw new IllegalArgumentException(brand + " 브랜드에 이미 추천 상품이 있습니다. 기존 추천을 해제하고 다시 시도해주세요.");
-                }
-            }
-        }
-
         if (dto.getName()        != null) product.setName(dto.getName());
         if (dto.getDescription() != null) product.setDescription(dto.getDescription());
         if (dto.getPrice()       != null) product.setPrice(dto.getPrice());
@@ -221,15 +219,17 @@ public class ProductService {
         if (dto.getDiscountRate()   != null) product.setDiscountRate(dto.getDiscountRate());
         if (dto.getOriginalPrice()  != null) product.setOriginalPrice(dto.getOriginalPrice());
         if (dto.getThumbnailUrl()   != null) product.setThumbnailUrl(dto.getThumbnailUrl());
-        if (dto.getCuratorImageUrl() != null) product.setCuratorImageUrl(dto.getCuratorImageUrl());
         if (dto.getColorName()      != null) product.setColorName(dto.getColorName());
         if (dto.getColorHex()       != null) product.setColorHex(dto.getColorHex());
         if (dto.getFeatures()       != null) product.setFeatures(dto.getFeatures());
         if (dto.getComposition()    != null) product.setComposition(dto.getComposition());
+        if (dto.getIsNew()          != null) product.setIsNew(dto.getIsNew());
+        if (dto.getIsBest()         != null) product.setIsBest(dto.getIsBest());
 
         // 사이즈별 재고 갱신 (전체 교체)
         if (dto.getSizeStocks() != null) {
-            product.getSizes().clear();
+            if (product.getSizes() != null) product.getSizes().clear();
+            else product.setSizes(new java.util.ArrayList<>());
             for (var ss : dto.getSizeStocks()) {
                 ProductSize ps = ProductSize.builder()
                         .product(product)
@@ -241,9 +241,6 @@ public class ProductService {
             product.setStock(dto.getSizeStocks().stream()
                     .mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum());
         }
-        if (dto.getIsNew()       != null) product.setIsNew(dto.getIsNew());
-        if (dto.getIsBest()      != null) product.setIsBest(dto.getIsBest());
-        if (dto.getIsRecommend() != null) product.setIsRecommend(dto.getIsRecommend());
 
         // 이미지 처리: dto에 URL이 있으면 우선 사용
         if (dto.getImageUrl() != null && !dto.getImageUrl().isBlank()) {
@@ -268,6 +265,45 @@ public class ProductService {
         }
 
         return ProductResponseDto.from(product);
+    }
+
+    // 추천 전체 초기화 (모든 상품 대상)
+    @Transactional
+    public void resetAllRecommend() {
+        List<Product> all = productRepository.findAll();
+        for (Product p : all) {
+            p.setIsRecommend(false);
+            p.setCuratorImageUrl(null);
+        }
+    }
+
+    // 큐레이터 설정 전용 (추천 체크 + 큐레이터 이미지)
+    @Transactional
+    public ProductResponseDto setRecommend(Long productId, String curatorImageUrl) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
+
+        // 같은 브랜드 기존 추천 해제
+        if (product.getBrand() != null) {
+            List<Product> existing = productRepository.findByBrandAndIsRecommendTrueAndIsActiveTrue(product.getBrand());
+            for (Product p : existing) {
+                p.setIsRecommend(false);
+                p.setCuratorImageUrl(null);
+            }
+        }
+
+        product.setIsRecommend(true);
+        product.setCuratorImageUrl(curatorImageUrl);
+        return ProductResponseDto.from(product);
+    }
+
+    // 큐레이터 해제 전용
+    @Transactional
+    public void unsetRecommend(Long productId) {
+        Product product = productRepository.findById(productId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
+        product.setIsRecommend(false);
+        product.setCuratorImageUrl(null);
     }
 
     // 상품 삭제 (관리자) - 소프트 삭제

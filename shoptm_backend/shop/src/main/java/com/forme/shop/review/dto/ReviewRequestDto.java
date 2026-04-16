@@ -11,8 +11,7 @@ public class ReviewRequestDto {
     @Getter @Setter
     public static class Create {
 
-        @NotNull(message = "주문을 선택해주세요.")
-        private Long orderId;      // 어떤 주문에 대한 리뷰인지
+        private Long orderId;      // 어떤 주문에 대한 리뷰인지 (선택)
 
         @NotNull(message = "상품을 선택해주세요.")
         private Long productId;    // 어떤 상품에 대한 리뷰인지

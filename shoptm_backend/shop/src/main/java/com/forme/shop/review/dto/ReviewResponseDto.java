@@ -19,6 +19,8 @@ public class ReviewResponseDto {
     private Long orderId;
     private Integer rating;       // 별점
     private String content;       // 리뷰 내용
+    private String reply;         // 관리자 답글
+    private LocalDateTime repliedAt;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
@@ -30,9 +32,11 @@ public class ReviewResponseDto {
                 .memberName(review.getMember().getName())
                 .productId(review.getProduct().getId())
                 .productName(review.getProduct().getName())
-                .orderId(review.getOrders().getId())
+                .orderId(review.getOrders() != null ? review.getOrders().getId() : null)
                 .rating(review.getRating())
                 .content(review.getContent())
+                .reply(review.getReply())
+                .repliedAt(review.getRepliedAt())
                 .createdAt(review.getCreatedAt())
                 .updatedAt(review.getUpdatedAt())
                 .build();

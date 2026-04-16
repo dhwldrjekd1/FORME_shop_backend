@@ -64,7 +64,7 @@ public class ProductResponseDto {
                         ? Arrays.asList(product.getImageUrls().split(","))
                         : (product.getImageUrl() != null ? List.of(product.getImageUrl()) : List.of()))
                 .thumbnailUrl(product.getThumbnailUrl() != null ? product.getThumbnailUrl() : product.getImageUrl())
-                .curatorImageUrl(product.getCuratorImageUrl() != null ? product.getCuratorImageUrl() : product.getImageUrl())
+                .curatorImageUrl(product.getCuratorImageUrl())
                 .colorName(product.getColorName())
                 .colorHex(product.getColorHex())
                 .features(product.getFeatures() != null && !product.getFeatures().isBlank()

@@ -37,7 +37,7 @@ public class ReviewService {
 
     // 내가 작성한 리뷰 목록 조회 (일반회원)
     public List<ReviewResponseDto> getMyReviews(Long memberId) {
-        return reviewRepository.findByProductIdAndIsActiveTrueOrderByCreatedAtDesc(memberId)
+        return reviewRepository.findByMemberIdAndIsActiveTrueOrderByCreatedAtDesc(memberId)
                 .stream()
                 .map(ReviewResponseDto::from)
                 .collect(Collectors.toList());
@@ -48,22 +48,23 @@ public class ReviewService {
     @Transactional
     public ReviewResponseDto createReview(Long memberId, ReviewRequestDto.Create dto) {
 
-        // 회원 존재 여부 확인
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
-        // 상품 존재 여부 확인
         Product product = productRepository.findById(dto.getProductId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
-        // 주문 존재 여부 확인
-        Orders orders = orderRepository.findById(dto.getOrderId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+        // 주문 확인 (선택 — orderId가 null이면 주문 없이 리뷰 가능)
+        Orders orders = null;
+        if (dto.getOrderId() != null) {
+            orders = orderRepository.findById(dto.getOrderId())
+                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
 
-        // 이미 리뷰를 작성했는지 확인 (중복 방지)
-        if (reviewRepository.existsByMemberIdAndOrdersIdAndProductId(
-                memberId, dto.getOrderId(), dto.getProductId())) {
-            throw new IllegalArgumentException("이미 리뷰를 작성했습니다.");
+            // 중복 리뷰 방지 (주문이 있는 경우만)
+            if (reviewRepository.existsByMemberIdAndOrdersIdAndProductId(
+                    memberId, dto.getOrderId(), dto.getProductId())) {
+                throw new IllegalArgumentException("이미 리뷰를 작성했습니다.");
+            }
         }
 
         Review review = Review.builder()
@@ -91,12 +92,22 @@ public class ReviewService {
         return ReviewResponseDto.from(review);
     }
 
-    // 리뷰 삭제 (일반회원 또는 관리자)
+    // 리뷰 삭제 (일반회원 또는 관리자) — hard delete (UNIQUE 제약 때문)
     @Transactional
     public void deleteReview(Long reviewId) {
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 리뷰입니다."));
         reviewRepository.delete(review);
+    }
+
+    // 관리자 답글
+    @Transactional
+    public ReviewResponseDto replyReview(Long reviewId, String reply) {
+        Review review = reviewRepository.findById(reviewId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 리뷰입니다."));
+        review.setReply(reply);
+        review.setRepliedAt(reply != null ? java.time.LocalDateTime.now() : null);
+        return ReviewResponseDto.from(review);
     }
 
     // 관리자 - 전체 리뷰 목록 조회

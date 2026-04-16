@@ -37,6 +37,8 @@ public class OrderRequestDto {
         @NotNull(message = "수량을 입력해주세요.")
         @Min(value = 1, message = "수량은 1개 이상이어야 합니다.")
         private Integer quantity;          // 주문 수량
+
+        private String size;               // 주문 사이즈
     }
 
     // 주문 상태 변경 DTO (관리자)

@@ -5,6 +5,7 @@ import com.forme.shop.config.jwt.JwtFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
@@ -58,6 +59,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/comments/**").permitAll()
                         // Q&A 조회는 비로그인도 가능
                         .requestMatchers("/api/qna/**").permitAll()
+                        // 사이트 설정 조회는 비로그인도 가능
+                        .requestMatchers(HttpMethod.GET, "/api/settings/**").permitAll()
                         // 관리자만 접근 가능
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
                         // 그 외 /api/** 는 로그인 필요 (장바구니, 주문, 마이페이지 등)

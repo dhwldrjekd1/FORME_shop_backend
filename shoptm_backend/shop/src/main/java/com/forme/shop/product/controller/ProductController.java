@@ -80,11 +80,19 @@ public class ProductController {
 
     // 상품 수정 (관리자) - 다중 이미지 업로드
     @PutMapping("/admin/products/{id}")
-    public ResponseEntity<ProductResponseDto> updateProduct(
+    public ResponseEntity<?> updateProduct(
             @PathVariable Long id,
             @RequestPart ProductRequestDto.Update dto,
-            @RequestPart(required = false) List<MultipartFile> images) throws IOException {
-        return ResponseEntity.ok(productService.updateProduct(id, dto, images));
+            @RequestPart(required = false) List<MultipartFile> images) {
+        try {
+            return ResponseEntity.ok(productService.updateProduct(id, dto, images));
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ResponseEntity.status(500).body(java.util.Map.of(
+                "message", "상품 수정 실패: " + e.getMessage(),
+                "error", e.getClass().getSimpleName()
+            ));
+        }
     }
 
     // 상품 삭제 (관리자)
@@ -92,6 +100,29 @@ public class ProductController {
     @DeleteMapping("/admin/products/{id}")
     public ResponseEntity<Void> deleteProduct(@PathVariable Long id) {
         productService.deleteProduct(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // 추천 전체 초기화 (관리자)
+    @DeleteMapping("/admin/products/recommend/reset")
+    public ResponseEntity<Void> resetAllRecommend() {
+        productService.resetAllRecommend();
+        return ResponseEntity.noContent().build();
+    }
+
+    // 큐레이터 설정 전용 (관리자)
+    @PatchMapping("/admin/products/{id}/recommend")
+    public ResponseEntity<ProductResponseDto> setRecommend(
+            @PathVariable Long id,
+            @RequestBody java.util.Map<String, String> body) {
+        String curatorImageUrl = body.get("curatorImageUrl");
+        return ResponseEntity.ok(productService.setRecommend(id, curatorImageUrl));
+    }
+
+    // 큐레이터 해제 전용 (관리자)
+    @DeleteMapping("/admin/products/{id}/recommend")
+    public ResponseEntity<Void> unsetRecommend(@PathVariable Long id) {
+        productService.unsetRecommend(id);
         return ResponseEntity.noContent().build();
     }
 

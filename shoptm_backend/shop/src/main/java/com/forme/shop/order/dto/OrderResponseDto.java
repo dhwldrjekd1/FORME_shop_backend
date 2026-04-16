@@ -50,9 +50,11 @@ public class OrderResponseDto {
         private Long id;
         private Long productId;
         private String productName;
+        private String productImageUrl;
+        private String size;
         private Integer quantity;
-        private Integer price;       // 주문 당시 단가
-        private Integer totalPrice;  // 단가 * 수량
+        private Integer price;
+        private Integer totalPrice;
 
         // OrderItem 엔티티를 OrderItemResponseDto 로 변환하는 정적 메서드
         public static OrderItemResponseDto from(OrderItem item) {
@@ -60,6 +62,8 @@ public class OrderResponseDto {
                     .id(item.getId())
                     .productId(item.getProduct().getId())
                     .productName(item.getProduct().getName())
+                    .productImageUrl(item.getProduct().getImageUrl())
+                    .size(item.getSize())
                     .quantity(item.getQuantity())
                     .price(item.getUnitPrice())
                     // 총 금액 = 단가 * 수량 (Integer 곱셈)
