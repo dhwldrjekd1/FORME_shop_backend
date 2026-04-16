@@ -1,0 +1,66 @@
+# 사용법:
+#   cd c:/pro/forme/backend
+#   docker compose up --build      # 처음 / 코드 변경 후
+#   docker compose up -d           # 백그라운드
+#   docker compose down            # 중지 + 컨테이너 삭제
+#   docker compose down -v         # DB 데이터까지 완전 삭제
+#
+# 새 PC 셋업:
+#   1) Docker Desktop 설치 후 실행
+#   2) 이 폴더에서 docker compose up --build
+#   3) 브라우저에서 http://localhost:8302/
+
+name: forme
+
+services:
+  # ─── PostgreSQL ───────────────────────────────
+  postgres:
+    image: postgres:16
+    container_name: forme_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: shoptm
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1004
+    ports:
+      # 호스트 5433 → 컨테이너 5432
+      # (호스트에서 직접 psql 로 접속할 때 사용. 백엔드 컨테이너는 내부 5432 사용)
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # 컨테이너 첫 기동 시(=postgres_data 비어있을 때) 자동 적재
+      - ./shoptm.sql:/docker-entrypoint-initdb.d/shoptm.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d shoptm"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ─── Spring Boot 백엔드 (프론트 정적 리소스 포함) ─
+  backend:
+    build:
+      # 빌드 컨텍스트는 forme/ 폴더 — 프론트 소스도 같이 봐야 하기 때문
+      context: ..
+      dockerfile: shoptm_backend/Dockerfile
+    container_name: forme_backend
+    restart: always
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      # 외부에 노출되는 유일한 포트. LAN 공개 시 이 포트만 방화벽 허용
+      - "8302:8302"
+    volumes:
+      # PC의 실제 폴더와 연결 → 여기에 사진 넣으면 서버에서 바로 접근 가능
+      - C:/forme/uploads:/app/uploads
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/shoptm
+      SPRING_DATASOURCE_USERNAME: postgres
+      SPRING_DATASOURCE_PASSWORD: 1004
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      JWT_SECRET: shoptmSecretKey256bitLongEnoughForHS256Algorithm!!
+      # 업로드 경로를 컨테이너 내부로 지정
+      FILE_UPLOAD_DIR: /app/uploads
+
+volumes:
+  postgres_data:

@@ -261,6 +261,6 @@ forme/
 │       ├── config/               # Security, JWT, CORS
 │       └── common/               # 예외 처리, 파일 관리
 │
-├── docs/                         # 산출물 (11개)
+├
 └── public/                       # 정적 파일 (이미지)
 ```
