@@ -22,8 +22,9 @@ public class WebConfig implements WebMvcConfigurer {
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/api/**")          // /api/** 로 시작하는 모든 URL 에 CORS 적용
                 .allowedOrigins(
-                        "http://localhost:5173", // Vue.js 기본 포트
-                        "http://localhost:3000"  // 추가 포트 (필요 시)
+                        "http://localhost:5173",
+                        "http://localhost:3000",
+                        "https://forme.dyy.kr"
                 )
                 .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
                 .allowedHeaders("*")             // 모든 헤더 허용

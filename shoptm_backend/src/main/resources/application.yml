@@ -6,8 +6,8 @@ spring:
     name: shoptm
 
   datasource:
-    url: jdbc:postgresql://localhost:5433/shoptm
-    username: postgres
+    url: jdbc:postgresql://localhost:5432/shoptm
+    username: shoptm
     password: 1004
     driver-class-name: org.postgresql.Driver
 
