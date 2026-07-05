@@ -19,6 +19,7 @@ import java.util.List;
 public class JwtFilter extends OncePerRequestFilter {
 
     private final JwtUtil jwtUtil;
+    private final TokenBlacklistService tokenBlacklistService;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -33,7 +34,8 @@ public class JwtFilter extends OncePerRequestFilter {
         if (header != null && header.startsWith("Bearer ")) {
             String token = header.substring(7);  // "Bearer " 제거하고 토큰만 추출
 
-            if (jwtUtil.validateToken(token)) {
+            // 서명·만료는 유효하더라도, 로그아웃 등으로 폐기된(jti가 블랙리스트에 있는) 토큰이면 인증 처리하지 않음
+            if (jwtUtil.validateToken(token) && !tokenBlacklistService.isRevoked(jwtUtil.getJti(token))) {
                 String email = jwtUtil.getEmail(token);  // 토큰에서 이메일 추출
                 String role  = jwtUtil.getRole(token);   // 토큰에서 권한 추출
 

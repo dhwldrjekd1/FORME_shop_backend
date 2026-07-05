@@ -2,6 +2,7 @@ package com.forme.shop.member.service;
 
 import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.config.jwt.JwtUtil;
+import com.forme.shop.config.jwt.TokenBlacklistService;
 import com.forme.shop.member.dto.MemberRequestDto;
 import com.forme.shop.member.dto.MemberResponseDto;
 import com.forme.shop.member.entity.Member;  // 반드시 우리 Member 클래스 import
@@ -64,6 +65,7 @@ public class MemberService {
     }
 
     private final JwtUtil jwtUtil;  // 필드에 추가
+    private final TokenBlacklistService tokenBlacklistService;
 
     // 로그인
     // 응답에 token + 회원 식별/표시 정보 포함 (프론트가 마이페이지·Q&A 작성 등에 사용)
@@ -135,6 +137,18 @@ public class MemberService {
         SecurityUtil.checkOwnerOrAdmin(member.getEmail());
 
         member.setIsActive(false);  // 비활성화 처리
+    }
+
+    // 로그아웃 — 지금 쓰던 토큰의 jti를 블랙리스트에 등록해서 만료 전이라도 즉시 무효화
+    public void logout(String authHeader) {
+        if (authHeader == null || !authHeader.startsWith("Bearer ")) return;
+
+        String token = authHeader.substring(7);
+        if (!jwtUtil.validateToken(token)) return;  // 이미 무효한 토큰이면 등록할 필요 없음
+
+        String jti = jwtUtil.getJti(token);
+        java.time.Instant expiresAt = jwtUtil.getExpiration(token).toInstant();
+        tokenBlacklistService.revoke(jti, expiresAt);
     }
 
     // 관리자 - 전체 회원 목록 조회

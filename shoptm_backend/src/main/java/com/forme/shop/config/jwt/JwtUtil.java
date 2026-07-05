@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.security.Key;
 import java.util.Date;
+import java.util.UUID;
 
 @Component  // 스프링 빈으로 등록
 public class JwtUtil {
@@ -23,8 +24,10 @@ public class JwtUtil {
 
     // JWT 토큰 생성
     // email과 role을 토큰에 담아서 반환
+    // jti(토큰 고유 ID)를 발급해서, 로그아웃 시 이 토큰만 콕 집어 폐기할 수 있게 함 (TokenBlacklistService)
     public String generateToken(String email, String role) {
         return Jwts.builder()
+                .setId(UUID.randomUUID().toString())                    // jti: 토큰 고유 ID
                 .setSubject(email)                                      // 토큰 주인 (email)
                 .claim("role", role)                                    // 추가 정보 (권한)
                 .setIssuedAt(new Date())                                // 발급 시간
@@ -41,6 +44,16 @@ public class JwtUtil {
     // 토큰에서 권한 추출
     public String getRole(String token) {
         return getClaims(token).get("role", String.class);
+    }
+
+    // 토큰 고유 ID(jti) 추출 — 블랙리스트 등록/조회 키로 사용
+    public String getJti(String token) {
+        return getClaims(token).getId();
+    }
+
+    // 토큰 만료 시각 추출 — 블랙리스트 항목을 언제까지 들고 있으면 되는지 판단용
+    public Date getExpiration(String token) {
+        return getClaims(token).getExpiration();
     }
 
     // 토큰 유효성 검증

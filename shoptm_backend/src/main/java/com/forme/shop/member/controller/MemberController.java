@@ -3,6 +3,7 @@ package com.forme.shop.member.controller;
 import com.forme.shop.member.dto.MemberRequestDto;
 import com.forme.shop.member.dto.MemberResponseDto;
 import com.forme.shop.member.service.MemberService;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -58,6 +59,14 @@ public class MemberController {
     @DeleteMapping("/members/{id}")
     public ResponseEntity<Void> withdraw(@PathVariable Long id) {
         memberService.withdraw(id);
+        return ResponseEntity.noContent().build();
+    }
+
+    // 로그아웃 — 지금 쓰고 있던 토큰을 서버 블랙리스트에 등록해서 즉시 무효화
+    // POST /api/logout
+    @PostMapping("/logout")
+    public ResponseEntity<Void> logout(HttpServletRequest request) {
+        memberService.logout(request.getHeader("Authorization"));
         return ResponseEntity.noContent().build();
     }
 
