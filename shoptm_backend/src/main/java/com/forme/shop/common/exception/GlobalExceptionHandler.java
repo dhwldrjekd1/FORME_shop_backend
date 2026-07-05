@@ -70,6 +70,21 @@ public class GlobalExceptionHandler {
                         .build());
     }
 
+    // 로그인은 했지만 본인 소유가 아닌 리소스에 접근할 때
+    // 예: 다른 회원의 주문/장바구니/회원정보를 URL의 id만 바꿔서 접근 시도 (SecurityUtil.checkOwnerOrAdmin)
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ErrorResponseDto> handleAccessDeniedException(
+            org.springframework.security.access.AccessDeniedException ex) {
+
+        return ResponseEntity
+                .status(HttpStatus.FORBIDDEN)  // 403
+                .body(ErrorResponseDto.builder()
+                        .status(403)
+                        .message(ex.getMessage())
+                        .timestamp(LocalDateTime.now())
+                        .build());
+    }
+
     // JSON 파싱 오류
     @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponseDto> handleJsonParseException(

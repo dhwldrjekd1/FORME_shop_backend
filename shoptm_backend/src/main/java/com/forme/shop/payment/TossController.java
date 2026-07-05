@@ -46,7 +46,16 @@ public class TossController {
                     Map.class
             );
 
-            return ResponseEntity.ok(Map.of("success", true, "data", response.getBody()));
+            // 클라이언트가 보낸 amount가 아니라, 토스가 실제로 승인했다고 응답한 totalAmount를
+            // 신뢰 가능한 결제 금액으로 사용한다. 이 값을 그대로 주문 생성(createOrder)의
+            // paidAmount로 넘겨서, 서버가 계산한 실제 주문 금액과 대조하게 한다.
+            Object confirmedAmount = response.getBody() != null ? response.getBody().get("totalAmount") : null;
+
+            return ResponseEntity.ok(Map.of(
+                    "success", true,
+                    "amount", confirmedAmount != null ? confirmedAmount : amount,
+                    "data", response.getBody()
+            ));
         } catch (Exception e) {
             return ResponseEntity.badRequest()
                     .body(Map.of("success", false, "message", e.getMessage()));

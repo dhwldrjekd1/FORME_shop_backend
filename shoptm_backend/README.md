@@ -61,8 +61,8 @@ src/main/java/com/forme/shop/
 
 ### 회원 / 인증
 - 회원가입 / 로그인 / 로그아웃 (JWT)
-- AccessToken + RefreshToken 발급
-- Spring Security 필터 기반 인증
+- AccessToken 발급 (Spring Security 필터 기반 인증)
+- 리소스 소유자 검증 — 회원정보·장바구니·주문 API는 서비스 계층에서 로그인한 본인(또는 관리자)의 데이터인지 대조 후 처리 (SecurityUtil)
 
 ### 상품
 - 상품 목록 (브랜드·카테고리·뱃지 필터, 정렬)
@@ -70,8 +70,9 @@ src/main/java/com/forme/shop/
 - 이미지 파일 업로드
 
 ### 장바구니 / 결제
-- 장바구니 CRUD
+- 장바구니 CRUD (본인 소유 항목만 접근 가능)
 - 토스페이먼츠 결제 승인 API 연동
+- 결제 승인 금액과 서버가 재계산한 주문 금액을 대조 후 일치할 때만 주문 생성 및 PAID 상태 전환
 - 주문 생성 및 배송 정보 연동
 
 ### 리뷰 / 커뮤니티

@@ -1,5 +1,6 @@
 package com.forme.shop.order.service;
 
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.order.dto.OrderRequestDto;
@@ -13,6 +14,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
 
@@ -32,6 +34,9 @@ public class OrderService {
         // 회원 존재 여부 확인
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+
+        // 본인(또는 관리자)만 자신의 이름으로 주문 생성 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
 
         // 주문 엔티티 생성 (총액은 아래에서 계산 후 설정)
         Orders orders = Orders.builder()
@@ -84,6 +89,19 @@ public class OrderService {
         }
 
         orders.setTotalPrice(totalPrice);
+
+        // 토스페이먼츠 결제를 거쳐 들어온 주문이면, 실제 결제 승인 금액(paidAmount)이
+        // 서버가 방금 계산한 진짜 주문 금액(totalPrice)과 정확히 같은지 검증한다.
+        // (클라이언트가 결제는 1000원짜리로 하고 주문만 훨씬 비싸게 생성하는 금액 위변조 방지)
+        if (dto.getPaidAmount() != null) {
+            if (!dto.getPaidAmount().equals(totalPrice)) {
+                throw new IllegalArgumentException(
+                        "결제 금액과 주문 금액이 일치하지 않습니다. (결제: " + dto.getPaidAmount() + "원, 주문: " + totalPrice + "원)");
+            }
+            orders.setStatus("PAID");
+            orders.setPaidAt(LocalDateTime.now());
+        }
+
         OrderResponseDto result = OrderResponseDto.from(orderRepository.save(orders));
 
         // 누적 구매 금액 기반 등급 자동 업그레이드
@@ -131,6 +149,11 @@ public class OrderService {
 
     // 내 주문 목록 조회 (일반회원)
     public List<OrderResponseDto> getMyOrders(Long memberId) {
+        // 본인(또는 관리자)의 주문 목록만 조회 가능
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         return orderRepository.findByMemberIdOrderByCreatedAtDesc(memberId)
                 .stream()
                 .map(OrderResponseDto::from)
@@ -141,6 +164,10 @@ public class OrderService {
     public OrderResponseDto getOrder(Long orderId) {
         Orders orders = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+
+        // 본인(또는 관리자) 소유의 주문만 조회 가능
+        SecurityUtil.checkOwnerOrAdmin(orders.getMember().getEmail());
+
         return OrderResponseDto.from(orders);
     }
 
@@ -150,6 +177,9 @@ public class OrderService {
     public void cancelOrder(Long orderId) {
         Orders orders = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+
+        // 본인(또는 관리자) 소유의 주문만 취소 가능
+        SecurityUtil.checkOwnerOrAdmin(orders.getMember().getEmail());
 
         // PAID 상태가 아니면 취소 불가
         if (!orders.getStatus().equals("PAID")) {

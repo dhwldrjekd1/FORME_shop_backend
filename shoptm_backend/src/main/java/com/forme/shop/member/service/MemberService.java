@@ -1,5 +1,6 @@
 package com.forme.shop.member.service;
 
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.config.jwt.JwtUtil;
 import com.forme.shop.member.dto.MemberRequestDto;
 import com.forme.shop.member.dto.MemberResponseDto;
@@ -55,6 +56,10 @@ public class MemberService {
         // orElseThrow: 회원이 없으면 예외 발생
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+
+        // 본인(또는 관리자)만 조회 가능 — 로그인한 아무 회원이나 id만 바꿔서 조회하는 것 방지
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         return MemberResponseDto.from(member);
     }
 
@@ -102,6 +107,9 @@ public class MemberService {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
+        // 본인(또는 관리자)만 수정 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         // null 체크 후 값이 있을 때만 수정 (부분 수정 가능)
         if (dto.getName()     != null) member.setName(dto.getName());
         if (dto.getPhone()    != null) member.setPhone(dto.getPhone());
@@ -122,6 +130,10 @@ public class MemberService {
     public void withdraw(Long id) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+
+        // 본인(또는 관리자)만 탈퇴 처리 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         member.setIsActive(false);  // 비활성화 처리
     }
 

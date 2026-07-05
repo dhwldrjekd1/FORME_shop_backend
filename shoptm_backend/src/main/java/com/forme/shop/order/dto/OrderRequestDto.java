@@ -25,6 +25,11 @@ public class OrderRequestDto {
 
         @NotBlank(message = "배송 주소를 입력해주세요.")
         private String address;            // 배송 주소
+
+        // 토스페이먼츠로 결제를 이미 완료한 경우, 실제 승인된 결제 금액
+        // null이면 결제 없는 데모 주문(PENDING) — 값이 있으면 서버가 계산한 totalPrice와
+        // 반드시 일치해야만 주문이 생성되고, 일치 시 즉시 PAID 처리됨 (OrderService.createOrder)
+        private Integer paidAmount;
     }
 
     // 주문 상품 항목 DTO

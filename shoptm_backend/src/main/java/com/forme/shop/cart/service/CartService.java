@@ -4,6 +4,7 @@ import com.forme.shop.cart.dto.CartRequestDto;
 import com.forme.shop.cart.dto.CartResponseDto;
 import com.forme.shop.cart.entity.Cart;
 import com.forme.shop.cart.repository.CartRepository;
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.product.entity.Product;
@@ -27,6 +28,11 @@ public class CartService {
 
     // 장바구니 목록 조회
     public List<CartResponseDto> getCartList(Long memberId) {
+        // 본인(또는 관리자)의 장바구니만 조회 가능
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         return cartRepository.findByMemberId(memberId)
                 .stream()
                 .map(CartResponseDto::from)   // 각 Cart 엔티티를 DTO로 변환
@@ -40,6 +46,9 @@ public class CartService {
         // 회원 존재 여부 확인
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+
+        // 본인(또는 관리자)의 장바구니에만 담을 수 있음
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
 
         // 상품 존재 여부 확인
         Product product = productRepository.findById(dto.getProductId())
@@ -73,6 +82,9 @@ public class CartService {
         Cart cart = cartRepository.findById(cartId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 장바구니입니다."));
 
+        // 본인(또는 관리자) 소유의 장바구니 항목만 수정 가능
+        SecurityUtil.checkOwnerOrAdmin(cart.getMember().getEmail());
+
         cart.setQuantity(dto.getQuantity());  // 수량 변경 (더티 체킹으로 자동 저장)
         return CartResponseDto.from(cart);
     }
@@ -82,6 +94,10 @@ public class CartService {
     public void deleteCart(Long cartId) {
         Cart cart = cartRepository.findById(cartId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 장바구니입니다."));
+
+        // 본인(또는 관리자) 소유의 장바구니 항목만 삭제 가능
+        SecurityUtil.checkOwnerOrAdmin(cart.getMember().getEmail());
+
         cartRepository.delete(cart);
     }
 
@@ -89,6 +105,11 @@ public class CartService {
     // 주문 완료 후 장바구니 비울 때 사용
     @Transactional
     public void deleteAllCart(Long memberId) {
+        // 본인(또는 관리자)의 장바구니만 비울 수 있음
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         cartRepository.deleteByMemberId(memberId);
     }
 }
