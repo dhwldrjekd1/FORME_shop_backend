@@ -1,11 +1,15 @@
 package com.forme.shop.member.controller;
 
+import com.forme.shop.common.security.SecurityUtil;
+import com.forme.shop.config.jwt.JwtUtil;
 import com.forme.shop.member.dto.MemberRequestDto;
 import com.forme.shop.member.dto.MemberResponseDto;
 import com.forme.shop.member.service.MemberService;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
@@ -18,6 +22,7 @@ import java.util.List;
 public class MemberController {
 
     private final MemberService memberService;
+    private final JwtUtil jwtUtil;
 
     // 회원가입
     // POST /api/register
@@ -28,11 +33,17 @@ public class MemberController {
         return ResponseEntity.ok(memberService.register(dto));
     }
     // 로그인
-    // POST /api/login → { token, id, email, name, role, grade }
+    // POST /api/login → { id, email, name, role, grade } + httpOnly 쿠키(auth_token)
+    // 토큰은 응답 바디에 담지 않는다 — 자바스크립트가 읽을 수 있는 곳(응답 바디→localStorage)에
+    // 두면 XSS로 그대로 탈취되므로, 브라우저만 자동으로 실어 보내는 httpOnly 쿠키로만 내려준다.
     @PostMapping("/login")
     public ResponseEntity<Map<String, Object>> login(
-            @Valid @RequestBody MemberRequestDto.Login dto) {
-        return ResponseEntity.ok(memberService.login(dto));
+            @Valid @RequestBody MemberRequestDto.Login dto,
+            HttpServletResponse response) {
+        Map<String, Object> result = memberService.login(dto);
+        String token = (String) result.remove("token");
+        response.addHeader(HttpHeaders.SET_COOKIE, jwtUtil.buildAuthCookie(token).toString());
+        return ResponseEntity.ok(result);
     }
 
 
@@ -62,11 +73,12 @@ public class MemberController {
         return ResponseEntity.noContent().build();
     }
 
-    // 로그아웃 — 지금 쓰고 있던 토큰을 서버 블랙리스트에 등록해서 즉시 무효화
+    // 로그아웃 — 지금 쓰고 있던 토큰을 서버 블랙리스트에 등록해서 즉시 무효화하고, 쿠키도 지움
     // POST /api/logout
     @PostMapping("/logout")
-    public ResponseEntity<Void> logout(HttpServletRequest request) {
-        memberService.logout(request.getHeader("Authorization"));
+    public ResponseEntity<Void> logout(HttpServletRequest request, HttpServletResponse response) {
+        memberService.logout(SecurityUtil.extractToken(request));
+        response.addHeader(HttpHeaders.SET_COOKIE, jwtUtil.buildExpiredAuthCookie().toString());
         return ResponseEntity.noContent().build();
     }
 

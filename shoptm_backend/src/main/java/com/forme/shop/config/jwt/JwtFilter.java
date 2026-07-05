@@ -1,5 +1,6 @@
 package com.forme.shop.config.jwt;
 
+import com.forme.shop.common.security.SecurityUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -27,13 +28,10 @@ public class JwtFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
 
-        // 요청 헤더에서 Authorization 값 추출
-        // 형식: "Bearer {토큰}"
-        String header = request.getHeader("Authorization");
+        // Authorization 헤더 또는 httpOnly 쿠키(auth_token)에서 토큰 추출
+        String token = SecurityUtil.extractToken(request);
 
-        if (header != null && header.startsWith("Bearer ")) {
-            String token = header.substring(7);  // "Bearer " 제거하고 토큰만 추출
-
+        if (token != null) {
             // 서명·만료는 유효하더라도, 로그아웃 등으로 폐기된(jti가 블랙리스트에 있는) 토큰이면 인증 처리하지 않음
             if (jwtUtil.validateToken(token) && !tokenBlacklistService.isRevoked(jwtUtil.getJti(token))) {
                 String email = jwtUtil.getEmail(token);  // 토큰에서 이메일 추출

@@ -140,11 +140,8 @@ public class MemberService {
     }
 
     // 로그아웃 — 지금 쓰던 토큰의 jti를 블랙리스트에 등록해서 만료 전이라도 즉시 무효화
-    public void logout(String authHeader) {
-        if (authHeader == null || !authHeader.startsWith("Bearer ")) return;
-
-        String token = authHeader.substring(7);
-        if (!jwtUtil.validateToken(token)) return;  // 이미 무효한 토큰이면 등록할 필요 없음
+    public void logout(String token) {
+        if (token == null || !jwtUtil.validateToken(token)) return;  // 없거나 이미 무효한 토큰이면 등록할 필요 없음
 
         String jti = jwtUtil.getJti(token);
         java.time.Instant expiresAt = jwtUtil.getExpiration(token).toInstant();

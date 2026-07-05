@@ -1,5 +1,8 @@
 package com.forme.shop.common.security;
 
+import com.forme.shop.config.jwt.JwtUtil;
+import jakarta.servlet.http.Cookie;
+import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -22,6 +25,24 @@ public class SecurityUtil {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
         return auth != null && auth.getAuthorities().stream()
                 .anyMatch(a -> a.getAuthority().equals("ROLE_ADMIN"));
+    }
+
+    // 요청에서 JWT를 꺼낸다 — Authorization 헤더 우선, 없으면 httpOnly 쿠키에서 찾음
+    // (브라우저는 쿠키로 보내고, curl/Postman 같은 도구는 헤더로 보내는 것 둘 다 지원)
+    public static String extractToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (header != null && header.startsWith("Bearer ")) {
+            return header.substring(7);
+        }
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if (JwtUtil.COOKIE_NAME.equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
+        return null;
     }
 
     // 리소스 소유자(email)가 본인이 아니고 관리자도 아니면 403

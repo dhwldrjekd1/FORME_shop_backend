@@ -3,14 +3,19 @@ package com.forme.shop.config.jwt;
 import io.jsonwebtoken.*;
 import io.jsonwebtoken.security.Keys;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.ResponseCookie;
 import org.springframework.stereotype.Component;
 
 import java.security.Key;
+import java.time.Duration;
 import java.util.Date;
 import java.util.UUID;
 
 @Component  // 스프링 빈으로 등록
 public class JwtUtil {
+
+    // 토큰을 담아둘 httpOnly 쿠키 이름 — 자바스크립트(document.cookie)로는 절대 못 읽음
+    public static final String COOKIE_NAME = "auth_token";
 
     private final Key key;
     private final long expiration;
@@ -54,6 +59,31 @@ public class JwtUtil {
     // 토큰 만료 시각 추출 — 블랙리스트 항목을 언제까지 들고 있으면 되는지 판단용
     public Date getExpiration(String token) {
         return getClaims(token).getExpiration();
+    }
+
+    // 로그인 성공 시 내려줄 쿠키 생성
+    // httpOnly: 자바스크립트가 못 읽음 (XSS로 토큰 탈취 방지)
+    // secure: HTTPS에서만 전송 (forme.dyy.kr은 Caddy가 TLS 종료 후 프록시하므로 항상 해당)
+    // sameSite=Lax: 다른 사이트에서 이 쿠키를 실어 요청 위조(CSRF)하는 것 방지
+    public ResponseCookie buildAuthCookie(String token) {
+        return ResponseCookie.from(COOKIE_NAME, token)
+                .httpOnly(true)
+                .secure(true)
+                .sameSite("Lax")
+                .path("/api")
+                .maxAge(Duration.ofMillis(expiration))
+                .build();
+    }
+
+    // 로그아웃 시 브라우저에서 쿠키를 즉시 지우기 위한 만료 쿠키
+    public ResponseCookie buildExpiredAuthCookie() {
+        return ResponseCookie.from(COOKIE_NAME, "")
+                .httpOnly(true)
+                .secure(true)
+                .sameSite("Lax")
+                .path("/api")
+                .maxAge(0)
+                .build();
     }
 
     // 토큰 유효성 검증
