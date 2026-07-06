@@ -23,7 +23,7 @@
 |------|------|
 | Framework | Spring Boot 3 |
 | ORM | Spring Data JPA |
-| DB | MySQL |
+| DB | PostgreSQL |
 | 빌드 도구 | Gradle |
 | 인증 | Spring Security + JWT |
 | 결제 | 토스페이먼츠 API |
@@ -65,11 +65,12 @@ src/main/java/com/forme/shop/
 - 토큰은 응답 바디가 아니라 httpOnly 쿠키로만 전달 — 자바스크립트가 읽을 수 없어 XSS로 인한 토큰 탈취 방지
 - 로그아웃 시 토큰 즉시 무효화 — jti 기반 서버 블랙리스트에 등록해, 만료 전이라도 같은 토큰 재사용 차단
 - 리소스 소유자 검증 — 회원정보·장바구니·주문 API는 서비스 계층에서 로그인한 본인(또는 관리자)의 데이터인지 대조 후 처리 (SecurityUtil)
+- DB 비밀번호·JWT 시크릿은 소스에 하드코딩하지 않고 환경변수(`DB_PASSWORD`, `JWT_SECRET`)로 주입
 
 ### 상품
 - 상품 목록 (브랜드·카테고리·뱃지 필터, 정렬)
 - 상품 상세 (사이즈별 재고 관리)
-- 이미지 파일 업로드
+- 이미지 파일 업로드 — 원본 파일명 대신 UUID로 파일명을 재생성하고 허용된 확장자(jpg/jpeg/png/gif/webp)만 통과시켜 경로 조작·임의 파일 업로드 방지
 
 ### 장바구니 / 결제
 - 장바구니 CRUD (본인 소유 항목만 접근 가능)

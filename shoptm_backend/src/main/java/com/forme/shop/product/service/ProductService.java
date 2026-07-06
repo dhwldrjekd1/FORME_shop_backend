@@ -331,22 +331,45 @@ public class ProductService {
                 .getSingleResult();
     }
 
+    // 허용할 이미지 확장자 (대소문자 무관)
+    private static final List<String> ALLOWED_IMAGE_EXTENSIONS =
+            List.of("jpg", "jpeg", "png", "gif", "webp");
+
     // 이미지 파일 저장
-    // UUID 로 파일명 중복 방지
-    // 저장 경로: application.yml 의 file.upload-dir
+    // 파일명은 원본 파일명을 전혀 사용하지 않고 "UUID.확장자" 형태로만 생성한다.
+    // 원본 파일명(image.getOriginalFilename())은 클라이언트가 임의로 조작해 보낼 수 있는 값이라
+    // "../../etc/cron.d/evil" 같은 경로 조작 문자열이 섞여 있어도 그대로 믿으면 안 된다.
     private String saveImage(MultipartFile image) throws IOException {
-        // 업로드 폴더 없으면 자동 생성
-        File dir = new File(uploadDir);
+        String ext = extractAllowedExtension(image.getOriginalFilename());
+
+        // 상대경로(dir)를 그대로 transferTo에 넘기면 Spring이 앱 작업 폴더가 아니라
+        // 서블릿 컨테이너의 임시 작업 폴더 기준으로 저장해버려 파일이 사라진다.
+        // getAbsoluteFile()로 절대경로를 넘겨야 우리가 의도한 uploadDir에 저장된다.
+        File dir = new File(uploadDir).getAbsoluteFile();
         if (!dir.exists()) dir.mkdirs();
 
-        // UUID + 원본 파일명으로 중복 방지
-        String fileName = UUID.randomUUID() + "_" + image.getOriginalFilename();
-        File dest = new File(uploadDir + File.separator + fileName);
+        String fileName = UUID.randomUUID() + "." + ext;
+        File dest = new File(dir, fileName);
 
-        // 파일 저장
         image.transferTo(dest);
 
-        // 저장된 파일 경로 반환 (프론트에서 이미지 URL 로 사용)
         return "/uploads/" + fileName;
+    }
+
+    // 원본 파일명에서 확장자만 뽑아 화이트리스트로 검증
+    // (경로 구분자나 상위 폴더 이동 문자열은 확장자로 취급되지 않으므로 자동으로 걸러짐)
+    private String extractAllowedExtension(String originalFilename) {
+        if (originalFilename == null) {
+            throw new IllegalArgumentException("파일명이 없습니다.");
+        }
+        int dotIndex = originalFilename.lastIndexOf('.');
+        if (dotIndex < 0 || dotIndex == originalFilename.length() - 1) {
+            throw new IllegalArgumentException("확장자가 없는 파일은 업로드할 수 없습니다.");
+        }
+        String ext = originalFilename.substring(dotIndex + 1).toLowerCase();
+        if (!ALLOWED_IMAGE_EXTENSIONS.contains(ext)) {
+            throw new IllegalArgumentException("지원하지 않는 이미지 형식입니다: " + ext);
+        }
+        return ext;
     }
 }

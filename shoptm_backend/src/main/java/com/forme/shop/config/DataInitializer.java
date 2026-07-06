@@ -23,13 +23,13 @@ public class DataInitializer implements CommandLineRunner {
         if (memberRepository.findByEmail(adminEmail).isEmpty()) {
             Member admin = Member.builder()
                     .email(adminEmail)
-                    .password(passwordEncoder.encode("admin1234"))
+                    .password(passwordEncoder.encode("1234"))
                     .name("관리자")
                     .role("ROLE_ADMIN")
                     .grade("VIP")
                     .build();
             memberRepository.save(admin);
-            log.info("✅ 관리자 계정 생성: {} / admin1234", adminEmail);
+            log.info("✅ 관리자 계정 생성: {} / 1234", adminEmail);
         } else {
             log.info("✅ 관리자 계정 이미 존재: {}", adminEmail);
         }
