@@ -45,6 +45,13 @@ public class SecurityConfig {
                         .authenticationEntryPoint(jwtAuthEntryPoint)
                 )
 
+                // Spring Security 기본 헤더 중 Cache-Control(no-cache, no-store...)은
+                // API 응답뿐 아니라 정적 리소스(이미지/JS/CSS)에도 무조건 붙어서 캐싱을 막아버림.
+                // WebConfig 에서 리소스별로 캐싱 정책을 직접 설정하므로 여기서는 끔.
+                .headers(headers -> headers
+                        .cacheControl(cache -> cache.disable())
+                )
+
                 // URL 별 접근 권한 설정 (순서 중요 - 구체적인 것부터 작성)
                 .authorizeHttpRequests(auth -> auth
                         // 회원가입, 로그인은 누구나 접근 가능
