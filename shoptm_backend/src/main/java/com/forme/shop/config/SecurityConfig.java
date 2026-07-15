@@ -66,6 +66,8 @@ public class SecurityConfig {
                         .requestMatchers("/api/comments/**").permitAll()
                         // Q&A 조회는 비로그인도 가능
                         .requestMatchers("/api/qna/**").permitAll()
+                        // FAQ 조회는 비로그인도 가능
+                        .requestMatchers("/api/faq/**").permitAll()
                         // 사이트 설정 조회는 비로그인도 가능
                         .requestMatchers(HttpMethod.GET, "/api/settings/**").permitAll()
                         // 관리자만 접근 가능

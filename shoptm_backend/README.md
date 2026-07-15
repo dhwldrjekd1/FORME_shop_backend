@@ -47,6 +47,7 @@ src/main/java/com/forme/shop/
 ├── wishlist/     # 위시리스트
 ├── board/        # 커뮤니티 게시판·댓글
 ├── qna/          # QnA 게시판
+├── faq/          # FAQ 관리
 ├── admin/        # 관리자 대시보드
 ├── analytics/    # 페이지뷰 방문 분석
 ├── settings/     # 사이트 설정
@@ -81,9 +82,10 @@ src/main/java/com/forme/shop/
 ### 리뷰 / 커뮤니티
 - 리뷰 작성·수정·삭제, 중복 방지
 - 게시판·QnA CRUD (댓글 포함)
+- FAQ CRUD — 카테고리·정렬 순서 관리, 조회는 비로그인도 가능하고 등록/수정/삭제는 관리자만 가능 (`/api/admin/**` URL 패턴으로 차단)
 
 ### 관리자
-- 회원·주문·상품·카테고리·리뷰 관리
+- 회원·주문·상품·카테고리·리뷰·FAQ 관리
 - 방문자 분석 (페이지뷰 트래킹)
 - 사이트 설정 관리
 
@@ -107,6 +109,11 @@ src/main/java/com/forme/shop/
 - **문제**: 처리되지 않은 예외 발생 시 500 응답 바디에 예외 클래스명·메시지를 그대로 담아 반환했고, 여러 컨트롤러에서 `printStackTrace()`로만 콘솔에 출력하고 있었음.
 - **원인**: 개발 중 빠른 디버깅을 위해 넣어둔 코드가 정리되지 않고 남아있었음.
 - **해결**: SLF4J 로거로 교체해 서버 로그에 상세 스택트레이스를 남기고, 클라이언트에는 내부 구현이 드러나지 않는 일반화된 메시지만 반환하도록 변경 (`GlobalExceptionHandler`, `ReviewController`, `ProductController`).
+
+### 새 테이블 추가 시 DB 권한 누락으로 500 에러
+- **문제**: FAQ 기능 추가 후 `faq` 테이블을 새로 만들었는데 `GET /api/faq` 호출 시 `permission denied for table faq`로 500 에러 발생.
+- **원인**: 이 프로젝트 DB는 스키마 소유자(`postgres`)와 애플리케이션 접속 계정(`shoptm`)이 분리되어 있고, 스키마에 `ALTER DEFAULT PRIVILEGES`가 설정되어 있지 않아 새 테이블을 만들 때마다 `shoptm` 계정에 수동으로 권한을 부여해야 함.
+- **해결**: 새 테이블과 시퀀스에 `GRANT ALL PRIVILEGES ... TO shoptm` 실행. (참고: 매번 반복하지 않으려면 `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO shoptm`을 한 번 설정해두는 방법도 있음)
 
 ---
 

@@ -216,6 +216,44 @@ ALTER SEQUENCE public.deliveries_id_seq OWNED BY public.deliveries.id;
 
 
 --
+-- Name: faq; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.faq (
+    id bigint NOT NULL,
+    category character varying(20) NOT NULL,
+    question character varying(200) NOT NULL,
+    answer text NOT NULL,
+    sort_order integer DEFAULT 0 NOT NULL,
+    created_at timestamp without time zone DEFAULT now() NOT NULL,
+    updated_at timestamp without time zone DEFAULT now() NOT NULL
+);
+
+
+ALTER TABLE public.faq OWNER TO postgres;
+
+--
+-- Name: faq_id_seq; Type: SEQUENCE; Schema: public; Owner: postgres
+--
+
+CREATE SEQUENCE public.faq_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+ALTER SEQUENCE public.faq_id_seq OWNER TO postgres;
+
+--
+-- Name: faq_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: postgres
+--
+
+ALTER SEQUENCE public.faq_id_seq OWNED BY public.faq.id;
+
+
+--
 -- Name: member; Type: TABLE; Schema: public; Owner: postgres
 --
 
@@ -619,6 +657,13 @@ ALTER TABLE ONLY public.comments ALTER COLUMN id SET DEFAULT nextval('public.com
 --
 
 ALTER TABLE ONLY public.deliveries ALTER COLUMN id SET DEFAULT nextval('public.deliveries_id_seq'::regclass);
+
+
+--
+-- Name: faq id; Type: DEFAULT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.faq ALTER COLUMN id SET DEFAULT nextval('public.faq_id_seq'::regclass);
 
 
 --
@@ -1282,6 +1327,14 @@ ALTER TABLE ONLY public.deliveries
 
 ALTER TABLE ONLY public.deliveries
     ADD CONSTRAINT deliveries_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: faq faq_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.faq
+    ADD CONSTRAINT faq_pkey PRIMARY KEY (id);
 
 
 --
