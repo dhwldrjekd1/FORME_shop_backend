@@ -4,6 +4,8 @@ import com.forme.shop.size.dto.SizeRequest;
 import com.forme.shop.size.dto.SizeResponse;
 import com.forme.shop.size.service.SizeRecommendService;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
@@ -12,6 +14,8 @@ import java.util.Map;
 @RequestMapping("/api/size")
 @RequiredArgsConstructor
 public class SizeRecommendController {
+
+    private static final Logger log = LoggerFactory.getLogger(SizeRecommendController.class);
 
     private final SizeRecommendService sizeRecommendService;
 
@@ -36,7 +40,8 @@ public class SizeRecommendController {
             body.put("sizeChart", res.getSizeChart());
             return ResponseEntity.ok(body);
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+            log.error("사이즈 추천 처리 실패", e);
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "사이즈 추천 처리 중 오류가 발생했습니다."));
         }
     }
 }

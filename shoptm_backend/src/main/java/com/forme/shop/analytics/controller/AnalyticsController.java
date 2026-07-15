@@ -3,6 +3,8 @@ package com.forme.shop.analytics.controller;
 import com.forme.shop.analytics.dto.PageViewRequest;
 import com.forme.shop.analytics.service.AnalyticsService;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
@@ -11,6 +13,8 @@ import java.util.Map;
 @RequestMapping("/api/analytics")
 @RequiredArgsConstructor
 public class AnalyticsController {
+
+    private static final Logger log = LoggerFactory.getLogger(AnalyticsController.class);
 
     private final AnalyticsService analyticsService;
 
@@ -24,7 +28,8 @@ public class AnalyticsController {
             analyticsService.record(request);
             return ResponseEntity.ok(Map.of("success", true));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+            log.error("페이지뷰 기록 실패", e);
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", "요청 처리에 실패했습니다."));
         }
     }
 

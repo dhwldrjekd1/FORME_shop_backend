@@ -1,6 +1,8 @@
 package com.forme.shop.payment;
 
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
@@ -12,6 +14,8 @@ import java.util.Map;
 @RequestMapping("/api/payment")
 @RequiredArgsConstructor
 public class TossController {
+
+    private static final Logger log = LoggerFactory.getLogger(TossController.class);
 
     private final TossConfig tossConfig;
 
@@ -62,8 +66,9 @@ public class TossController {
                     "data", response.getBody()
             ));
         } catch (Exception e) {
+            log.error("결제 승인 처리 실패", e);
             return ResponseEntity.badRequest()
-                    .body(Map.of("success", false, "message", e.getMessage()));
+                    .body(Map.of("success", false, "message", "결제 승인 처리 중 오류가 발생했습니다."));
         }
     }
 }

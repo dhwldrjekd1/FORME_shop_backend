@@ -110,10 +110,19 @@ src/main/java/com/forme/shop/
 - **원인**: 개발 중 빠른 디버깅을 위해 넣어둔 코드가 정리되지 않고 남아있었음.
 - **해결**: SLF4J 로거로 교체해 서버 로그에 상세 스택트레이스를 남기고, 클라이언트에는 내부 구현이 드러나지 않는 일반화된 메시지만 반환하도록 변경 (`GlobalExceptionHandler`, `ReviewController`, `ProductController`).
 
+### 예외 메시지를 그대로 반환하는 컨트롤러가 더 있었음
+- **문제**: 위와 같은 계열의 문제가 `TossController`(결제 승인 실패), `AnalyticsController`(방문 기록), `SizeRecommendController`(사이즈 추천), `ProductController.changeProductId`에도 남아있었고, `GlobalExceptionHandler`의 JSON 파싱 오류 핸들러도 Jackson 원본 파싱 메시지를 그대로 응답에 담고 있었음.
+- **해결**: 동일하게 SLF4J 로거로 상세 내용은 서버 로그에만 남기고, 클라이언트에는 일반화된 메시지를 반환하도록 통일.
+
 ### 새 테이블 추가 시 DB 권한 누락으로 500 에러
 - **문제**: FAQ 기능 추가 후 `faq` 테이블을 새로 만들었는데 `GET /api/faq` 호출 시 `permission denied for table faq`로 500 에러 발생.
-- **원인**: 이 프로젝트 DB는 스키마 소유자(`postgres`)와 애플리케이션 접속 계정(`shoptm`)이 분리되어 있고, 스키마에 `ALTER DEFAULT PRIVILEGES`가 설정되어 있지 않아 새 테이블을 만들 때마다 `shoptm` 계정에 수동으로 권한을 부여해야 함.
-- **해결**: 새 테이블과 시퀀스에 `GRANT ALL PRIVILEGES ... TO shoptm` 실행. (참고: 매번 반복하지 않으려면 `ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO shoptm`을 한 번 설정해두는 방법도 있음)
+- **원인**: 이 프로젝트 DB는 스키마 소유자(`postgres`)와 애플리케이션 접속 계정(`shoptm`)이 분리되어 있고, 스키마에 `ALTER DEFAULT PRIVILEGES`가 설정되어 있지 않아 새 테이블을 만들 때마다 `shoptm` 계정에 수동으로 권한을 부여해야 했음.
+- **해결**: 처음엔 `faq` 테이블 하나에만 수동으로 GRANT했지만, 근본 원인을 스키마 차원에서 해결하기 위해 `ALTER DEFAULT PRIVILEGES FOR ROLE postgres IN SCHEMA public GRANT ALL ON TABLES/SEQUENCES TO shoptm` 설정. 이후로는 `postgres` 계정으로 만드는 새 테이블·시퀀스에 `shoptm` 권한이 자동으로 부여됨 (실제로 테스트 테이블을 만들어 확인 후 삭제함).
+
+### 운영 환경에 안전하지 않은 JPA 설정
+- **문제**: `ddl-auto: update`로 운영 DB에 그대로 붙어있어 엔티티가 바뀌면 Hibernate가 스키마를 자동으로 조용히 변경할 수 있는 상태였고, `show-sql: true`로 모든 SQL이 로그에 계속 쌓이고 있었음.
+- **원인**: 별도 환경 분리 없이 처음부터 단일 설정으로 운영 중이었음.
+- **해결**: 스키마 변경은 이미 `shoptm.sql`을 직접 고치고 수동으로 반영하는 방식으로 운영 중이므로, `ddl-auto`를 `validate`로 바꿔 엔티티-스키마 불일치를 조용히 덮어쓰지 않고 기동 시 검증만 하도록 변경. `show-sql`은 `false`로 전환. 반영 전 로컬에서 별도 포트로 `validate` 모드 기동이 성공하는 것을 먼저 확인한 뒤 운영에 적용함.
 
 ---
 

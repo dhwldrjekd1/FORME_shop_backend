@@ -94,12 +94,11 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponseDto> handleJsonParseException(
             org.springframework.http.converter.HttpMessageNotReadableException ex) {
         log.warn("JSON 파싱 오류", ex);
-        String detail = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
                 .body(ErrorResponseDto.builder()
                         .status(400)
-                        .message("JSON 파싱 오류: " + detail)
+                        .message("요청 형식이 올바르지 않습니다.")  // 파싱 실패 원문 메시지는 서버 로그에만 남김
                         .timestamp(LocalDateTime.now())
                         .build());
     }

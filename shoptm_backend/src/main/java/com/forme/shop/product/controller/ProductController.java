@@ -137,7 +137,8 @@ public class ProductController {
             productService.changeProductId(id, newId);
             return ResponseEntity.ok(java.util.Map.of("success", true, "message", id + " → " + newId + " 변경 완료"));
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", e.getMessage()));
+            log.error("상품 ID 변경 실패", e);
+            return ResponseEntity.badRequest().body(java.util.Map.of("success", false, "message", "상품 ID 변경에 실패했습니다."));
         }
     }
 }
