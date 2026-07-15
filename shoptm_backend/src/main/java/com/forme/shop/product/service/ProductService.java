@@ -16,6 +16,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -341,6 +342,7 @@ public class ProductService {
     // "../../etc/cron.d/evil" 같은 경로 조작 문자열이 섞여 있어도 그대로 믿으면 안 된다.
     private String saveImage(MultipartFile image) throws IOException {
         String ext = extractAllowedExtension(image.getOriginalFilename());
+        validateImageContent(image, ext);
 
         // 상대경로(dir)를 그대로 transferTo에 넘기면 Spring이 앱 작업 폴더가 아니라
         // 서블릿 컨테이너의 임시 작업 폴더 기준으로 저장해버려 파일이 사라진다.
@@ -371,5 +373,33 @@ public class ProductService {
             throw new IllegalArgumentException("지원하지 않는 이미지 형식입니다: " + ext);
         }
         return ext;
+    }
+
+    // 파일명 확장자는 클라이언트가 마음대로 붙일 수 있으므로(예: 실행 파일을 .png로 위장),
+    // 실제 파일 앞부분 시그니처(매직 바이트)를 읽어 확장자가 주장하는 형식과 일치하는지 검증한다.
+    private void validateImageContent(MultipartFile image, String ext) throws IOException {
+        byte[] header = new byte[12];
+        int read;
+        try (InputStream in = image.getInputStream()) {
+            read = in.readNBytes(header, 0, header.length);
+        }
+
+        boolean valid = switch (ext) {
+            case "jpg", "jpeg" -> read >= 3
+                    && (header[0] & 0xFF) == 0xFF && (header[1] & 0xFF) == 0xD8 && (header[2] & 0xFF) == 0xFF;
+            case "png" -> read >= 8
+                    && (header[0] & 0xFF) == 0x89 && header[1] == 0x50 && header[2] == 0x4E && header[3] == 0x47
+                    && header[4] == 0x0D && header[5] == 0x0A && header[6] == 0x1A && header[7] == 0x0A;
+            case "gif" -> read >= 4
+                    && header[0] == 0x47 && header[1] == 0x49 && header[2] == 0x46 && header[3] == 0x38;
+            case "webp" -> read >= 12
+                    && header[0] == 'R' && header[1] == 'I' && header[2] == 'F' && header[3] == 'F'
+                    && header[8] == 'W' && header[9] == 'E' && header[10] == 'B' && header[11] == 'P';
+            default -> false;
+        };
+
+        if (!valid) {
+            throw new IllegalArgumentException("파일 내용이 " + ext + " 형식과 일치하지 않습니다.");
+        }
     }
 }
