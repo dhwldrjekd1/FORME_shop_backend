@@ -5,6 +5,8 @@ import com.forme.shop.review.dto.ReviewResponseDto;
 import com.forme.shop.review.service.ReviewService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -14,6 +16,8 @@ import java.util.List;
 @RequestMapping("/api")       // 이 컨트롤러의 모든 URL 앞에 /api 붙음
 @RequiredArgsConstructor      // Lombok: final 필드 생성자 주입 자동 처리
 public class ReviewController {
+
+    private static final Logger log = LoggerFactory.getLogger(ReviewController.class);
 
     private final ReviewService reviewService;
 
@@ -42,9 +46,9 @@ public class ReviewController {
         try {
             return ResponseEntity.ok(reviewService.createReview(memberId, dto));
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("리뷰 작성 실패", e);
             return ResponseEntity.status(500).body(java.util.Map.of(
-                "message", "리뷰 작성 실패: " + e.getClass().getSimpleName() + " - " + e.getMessage()
+                "message", "리뷰 작성에 실패했습니다."
             ));
         }
     }

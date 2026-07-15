@@ -49,11 +49,16 @@ public class TossController {
             // 클라이언트가 보낸 amount가 아니라, 토스가 실제로 승인했다고 응답한 totalAmount를
             // 신뢰 가능한 결제 금액으로 사용한다. 이 값을 그대로 주문 생성(createOrder)의
             // paidAmount로 넘겨서, 서버가 계산한 실제 주문 금액과 대조하게 한다.
+            // totalAmount가 없으면 클라이언트 값으로 대체하지 않고 승인 실패로 처리한다.
             Object confirmedAmount = response.getBody() != null ? response.getBody().get("totalAmount") : null;
+            if (confirmedAmount == null) {
+                return ResponseEntity.badRequest()
+                        .body(Map.of("success", false, "message", "결제 승인 응답에 금액 정보가 없습니다."));
+            }
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
-                    "amount", confirmedAmount != null ? confirmedAmount : amount,
+                    "amount", confirmedAmount,
                     "data", response.getBody()
             ));
         } catch (Exception e) {

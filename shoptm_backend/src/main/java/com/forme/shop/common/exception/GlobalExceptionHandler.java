@@ -1,6 +1,8 @@
 package com.forme.shop.common.exception;
 
 import com.forme.shop.common.dto.ErrorResponseDto;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -16,6 +18,8 @@ import java.util.Map;
 // 전역 예외 처리기
 @RestControllerAdvice
 public class GlobalExceptionHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     // @Valid 유효성 검증 실패 시 발생하는 예외 처리
     // 예: @NotBlank, @Email, @Size 등 검증 실패
@@ -89,7 +93,7 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
     public ResponseEntity<ErrorResponseDto> handleJsonParseException(
             org.springframework.http.converter.HttpMessageNotReadableException ex) {
-        ex.printStackTrace();
+        log.warn("JSON 파싱 오류", ex);
         String detail = ex.getMostSpecificCause() != null ? ex.getMostSpecificCause().getMessage() : ex.getMessage();
         return ResponseEntity
                 .status(HttpStatus.BAD_REQUEST)
@@ -104,12 +108,12 @@ public class GlobalExceptionHandler {
     // 500 Internal Server Error 반환
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ErrorResponseDto> handleException(Exception ex) {
-        ex.printStackTrace();  // 서버 콘솔에 실제 에러 출력
+        log.error("처리되지 않은 예외 발생", ex);  // 서버 로그에는 상세 스택트레이스 기록
         return ResponseEntity
                 .status(HttpStatus.INTERNAL_SERVER_ERROR)  // 500
                 .body(ErrorResponseDto.builder()
                         .status(500)
-                        .message("서버 오류: " + ex.getClass().getSimpleName() + " - " + ex.getMessage())
+                        .message("서버 오류가 발생했습니다. 잠시 후 다시 시도해주세요.")  // 클라이언트에는 내부 구현 정보를 노출하지 않음
                         .timestamp(LocalDateTime.now())
                         .build());
     }
