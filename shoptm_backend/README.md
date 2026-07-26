@@ -124,6 +124,10 @@ src/main/java/com/forme/shop/
 - **원인**: 별도 환경 분리 없이 처음부터 단일 설정으로 운영 중이었음.
 - **해결**: 스키마 변경은 이미 `shoptm.sql`을 직접 고치고 수동으로 반영하는 방식으로 운영 중이므로, `ddl-auto`를 `validate`로 바꿔 엔티티-스키마 불일치를 조용히 덮어쓰지 않고 기동 시 검증만 하도록 변경. `show-sql`은 `false`로 전환. 반영 전 로컬에서 별도 포트로 `validate` 모드 기동이 성공하는 것을 먼저 확인한 뒤 운영에 적용함.
 
+### 테스트 의존성 누락으로 테스트 빌드 자체가 실패
+- **문제**: `build.gradle`에 `testRuntimeOnly 'org.junit.platform:junit-platform-launcher'`만 있고 JUnit Jupiter API·`@SpringBootTest`가 포함된 `spring-boot-starter-test`가 빠져 있어, 유일한 테스트 코드인 `ShopApplicationTests`조차 `org.junit.jupiter.api`를 찾지 못해 컴파일 단계에서 실패했음 (`./gradlew test` 실행 자체가 불가능한 상태).
+- **해결**: `testImplementation 'org.springframework.boot:spring-boot-starter-test'` 추가. 실제 DB에 연결한 상태로 `./gradlew test`를 실행해 `contextLoads()`가 통과하는 것까지 확인함.
+
 ### 상품 목록 조회 시 N+1 쿼리
 - **문제**: `ProductResponseDto.from()`이 상품마다 `category.getName()`, `sizes` 컬렉션을 참조하는데 둘 다 `LAZY` 연관관계라서, 상품 30개를 조회하면 목록 쿼리 1번 + 카테고리/사이즈 조회가 상품마다 추가로 나가는 구조였음 (최대 61개 쿼리).
 - **해결**: `ProductRepository`의 목록 조회 메서드들에 `@EntityGraph(attributePaths = {"category", "sizes"})`를 붙여서 한 번의 JOIN 쿼리로 함께 가져오도록 변경. 반영 후 실제 SQL 로그로 상품 30개 조회가 쿼리 1번으로 처리되는 것을 확인함.
