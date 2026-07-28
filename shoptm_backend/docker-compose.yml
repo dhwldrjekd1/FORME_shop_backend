@@ -59,6 +59,8 @@ services:
       SPRING_DATASOURCE_PASSWORD: 1004
       SPRING_JPA_HIBERNATE_DDL_AUTO: update
       JWT_SECRET: shoptmSecretKey256bitLongEnoughForHS256Algorithm!!
+      # 최초 기동 시 자동 생성되는 관리자 계정(admin@forme.com) 비밀번호 - 로컬 개발용 예시값이므로 운영 배포 시 반드시 변경
+      ADMIN_INIT_PASSWORD: changeMe1234!
       # 업로드 경로를 컨테이너 내부로 지정
       FILE_UPLOAD_DIR: /app/uploads
 

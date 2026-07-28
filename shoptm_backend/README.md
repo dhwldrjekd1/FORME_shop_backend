@@ -66,7 +66,7 @@ src/main/java/com/forme/shop/
 - 토큰은 응답 바디가 아니라 httpOnly 쿠키로만 전달 — 자바스크립트가 읽을 수 없어 XSS로 인한 토큰 탈취 방지
 - 로그아웃 시 토큰 즉시 무효화 — jti 기반 서버 블랙리스트에 등록해, 만료 전이라도 같은 토큰 재사용 차단
 - 리소스 소유자 검증 — 회원정보·장바구니·주문 API는 서비스 계층에서 로그인한 본인(또는 관리자)의 데이터인지 대조 후 처리 (SecurityUtil)
-- DB 비밀번호·JWT 시크릿은 소스에 하드코딩하지 않고 환경변수(`DB_PASSWORD`, `JWT_SECRET`)로 주입
+- DB 비밀번호·JWT 시크릿·최초 관리자 비밀번호는 소스에 하드코딩하지 않고 환경변수(`DB_PASSWORD`, `JWT_SECRET`, `ADMIN_INIT_PASSWORD`)로 주입
 
 ### 상품
 - 상품 목록 (브랜드·카테고리·뱃지 필터, 정렬) — `@EntityGraph`로 카테고리·사이즈 재고를 한 쿼리에서 함께 조회 (N+1 방지)
@@ -143,6 +143,11 @@ src/main/java/com/forme/shop/
 ### 찜 목록에 소유자 검증이 통째로 빠짐
 - **문제**: `WishlistService`의 조회·추가·삭제 어디에도 `SecurityUtil.checkOwnerOrAdmin()`이 없어서, 로그인한 회원이 `/api/members/{memberId}/wishlist`의 `memberId`만 다른 회원 것으로 바꾸면 그 회원의 찜 목록을 보고, 마음대로 추가·삭제할 수 있었음(IDOR). 같은 구조인 `CartService`는 모든 메서드에 이 검증이 이미 붙어 있어 Wishlist만 빠뜨린 것이 명확했음.
 - **해결**: `getWishlist`/`addWishlist`/`removeWishlist` 모두 회원을 조회한 뒤 `SecurityUtil.checkOwnerOrAdmin(member.getEmail())`을 거치도록 추가. `addWishlist`는 "이미 찜한 상품" 여부를 확인하기 전에 소유자 검증부터 하도록 순서도 바꿔, 접근 권한이 없는 요청에 목록 상태를 흘리지 않게 함.
+
+### 관리자 계정 비밀번호가 소스에 하드코딩 + 로그에 평문 출력
+- **문제**: `DataInitializer`가 최초 기동 시 관리자 계정이 없으면 `admin@forme.com` / `1234`로 자동 생성하는데, 비밀번호 `"1234"`가 소스에 그대로 박혀 있었고(공개 저장소라 누구나 확인 가능) 생성 로그에도 `"관리자 계정 생성: {} / 1234"` 형태로 평문 비밀번호를 그대로 남기고 있었음.
+- **해결**: `DB_PASSWORD`/`JWT_SECRET`과 동일하게 관리자 초기 비밀번호도 필수 환경변수(`ADMIN_INIT_PASSWORD`)로만 주입받도록 변경, 값이 없으면 기동 자체가 실패함(placeholder 미해석 예외). 로그에서도 비밀번호 값을 제거. 이미 생성돼 있던 기존 관리자 계정에는 영향 없음(계정이 없을 때만 실행되는 분기라 비밀번호는 그대로 유지됨).
+
 
 ---
 
