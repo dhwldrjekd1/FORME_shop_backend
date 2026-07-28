@@ -148,6 +148,10 @@ src/main/java/com/forme/shop/
 - **문제**: `DataInitializer`가 최초 기동 시 관리자 계정이 없으면 `admin@forme.com` / `1234`로 자동 생성하는데, 비밀번호 `"1234"`가 소스에 그대로 박혀 있었고(공개 저장소라 누구나 확인 가능) 생성 로그에도 `"관리자 계정 생성: {} / 1234"` 형태로 평문 비밀번호를 그대로 남기고 있었음.
 - **해결**: `DB_PASSWORD`/`JWT_SECRET`과 동일하게 관리자 초기 비밀번호도 필수 환경변수(`ADMIN_INIT_PASSWORD`)로만 주입받도록 변경, 값이 없으면 기동 자체가 실패함(placeholder 미해석 예외). 로그에서도 비밀번호 값을 제거. 이미 생성돼 있던 기존 관리자 계정에는 영향 없음(계정이 없을 때만 실행되는 분기라 비밀번호는 그대로 유지됨).
 
+### 리뷰 수정·삭제 소유자검증 누락 + 임의 주문ID로 "구매 인증" 리뷰 위조 가능
+- **문제**: `ReviewService.updateReview`/`deleteReview`에 소유자 검증이 없어서 로그인한 사용자가 `reviewId`만 바꾸면 남의 리뷰를 수정·삭제할 수 있었음(IDOR). 게다가 `createReview`는 `dto.getOrderId()`가 실제로 그 회원의 주문인지, 그 주문에 리뷰 대상 상품이 포함돼 있는지 전혀 검증하지 않아서, 남의 주문 id를 넣거나 자기 주문이라도 사지 않은 상품에 걸어서 "구매 확인(orders 연결)" 표시가 붙은 리뷰를 위조할 수 있었음. `ReviewController.createReview`가 모든 예외를 `catch(Exception)`으로 삼켜 `500`으로만 응답하고 있어서, 이 검증들을 추가해도 클라이언트가 원인을 구분할 수 없는 상태이기도 했음.
+- **해결**: `CartService`와 동일한 패턴으로 작성·수정·삭제에 `SecurityUtil.checkOwnerOrAdmin()` 추가. `createReview`에 `orderId`가 있을 때 그 주문이 실제로 해당 회원 소유인지, 리뷰 대상 상품이 그 주문에 포함돼 있는지 검증하는 로직 추가. `ReviewController`의 불필요한 `catch(Exception)`을 제거해 `GlobalExceptionHandler`가 검증 실패를 `400`/`403`으로 정확히 응답하도록 정리(프론트는 이미 `orderId`를 항상 `null`로 보내고 있어 이 경로는 API 직접 호출 방어용).
+
 
 ---
 

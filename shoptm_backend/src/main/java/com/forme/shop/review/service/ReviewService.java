@@ -1,5 +1,6 @@
 package com.forme.shop.review.service;
 
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.order.entity.Orders;
@@ -51,6 +52,9 @@ public class ReviewService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
+        // 본인(또는 관리자) 명의로만 리뷰 작성 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         Product product = productRepository.findById(dto.getProductId())
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
@@ -59,6 +63,17 @@ public class ReviewService {
         if (dto.getOrderId() != null) {
             orders = orderRepository.findById(dto.getOrderId())
                     .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+
+            // 구매확인(orders 연결)은 실제로 본인이 그 상품을 주문했을 때만 성립해야 하므로,
+            // 남의 주문이거나 그 주문에 없는 상품을 걸어 "구매 인증" 리뷰를 위조하지 못하도록 검증
+            if (!orders.getMember().getId().equals(memberId)) {
+                throw new IllegalArgumentException("본인의 주문에 대해서만 리뷰를 작성할 수 있습니다.");
+            }
+            boolean containsProduct = orders.getOrderItems().stream()
+                    .anyMatch(item -> item.getProduct().getId().equals(dto.getProductId()));
+            if (!containsProduct) {
+                throw new IllegalArgumentException("해당 주문에 포함되지 않은 상품입니다.");
+            }
 
             // 중복 리뷰 방지 (주문이 있는 경우만)
             if (reviewRepository.existsByMemberIdAndOrdersIdAndProductId(
@@ -84,6 +99,9 @@ public class ReviewService {
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 리뷰입니다."));
 
+        // 본인(또는 관리자) 소유의 리뷰만 수정 가능
+        SecurityUtil.checkOwnerOrAdmin(review.getMember().getEmail());
+
         // null 체크 후 값이 있을 때만 수정 (부분 수정 가능)
         if (dto.getRating()  != null) review.setRating(dto.getRating());
         if (dto.getContent() != null) review.setContent(dto.getContent());
@@ -97,6 +115,10 @@ public class ReviewService {
     public void deleteReview(Long reviewId) {
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 리뷰입니다."));
+
+        // 본인(또는 관리자) 소유의 리뷰만 삭제 가능
+        SecurityUtil.checkOwnerOrAdmin(review.getMember().getEmail());
+
         reviewRepository.delete(review);
     }
 
