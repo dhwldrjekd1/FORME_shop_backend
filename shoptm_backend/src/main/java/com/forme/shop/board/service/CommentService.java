@@ -6,6 +6,7 @@ import com.forme.shop.board.entity.Board;
 import com.forme.shop.board.entity.Comment;
 import com.forme.shop.board.repository.BoardRepository;
 import com.forme.shop.board.repository.CommentRepository;
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -57,6 +58,9 @@ public class CommentService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
+        // 본인(또는 관리자) 명의로만 댓글 작성 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         Comment comment = Comment.builder()
                 .board(board)
                 .member(member)
@@ -72,6 +76,9 @@ public class CommentService {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다."));
 
+        // 본인(또는 관리자) 소유의 댓글만 수정 가능
+        SecurityUtil.checkOwnerOrAdmin(comment.getMember().getEmail());
+
         comment.setContent(dto.getContent());  // 내용 수정
         return CommentResponseDto.from(comment);
     }
@@ -81,6 +88,10 @@ public class CommentService {
     public void deleteComment(Long commentId) {
         Comment comment = commentRepository.findById(commentId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 댓글입니다."));
+
+        // 본인(또는 관리자) 소유의 댓글만 삭제 가능
+        SecurityUtil.checkOwnerOrAdmin(comment.getMember().getEmail());
+
         comment.setIsActive(false);  // 비활성화 처리
     }
 }

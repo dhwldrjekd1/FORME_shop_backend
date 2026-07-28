@@ -60,12 +60,12 @@ public class SecurityConfig {
                         .requestMatchers("/api/products/**").permitAll()
                         // 카테고리 조회는 비로그인도 가능
                         .requestMatchers("/api/categories/**").permitAll()
-                        // 게시판 조회는 비로그인도 가능
-                        .requestMatchers("/api/boards/**").permitAll()
-                        // 댓글 조회는 비로그인도 가능
-                        .requestMatchers("/api/comments/**").permitAll()
-                        // Q&A 조회는 비로그인도 가능
-                        .requestMatchers("/api/qna/**").permitAll()
+                        // 게시판 조회는 비로그인도 가능 (수정/삭제는 로그인 필요 - 아래 authenticated()로 폴백)
+                        .requestMatchers(HttpMethod.GET, "/api/boards/**").permitAll()
+                        // 댓글 조회는 비로그인도 가능 (수정/삭제는 로그인 필요)
+                        .requestMatchers(HttpMethod.GET, "/api/comments/**").permitAll()
+                        // Q&A 조회는 비로그인도 가능 (수정/삭제는 로그인 필요)
+                        .requestMatchers(HttpMethod.GET, "/api/qna/**").permitAll()
                         // FAQ 조회는 비로그인도 가능
                         .requestMatchers("/api/faq/**").permitAll()
                         // 사이트 설정 조회는 비로그인도 가능

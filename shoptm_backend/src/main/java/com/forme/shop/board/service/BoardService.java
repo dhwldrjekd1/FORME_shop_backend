@@ -4,6 +4,7 @@ import com.forme.shop.board.dto.BoardRequestDto;
 import com.forme.shop.board.dto.BoardResponseDto;
 import com.forme.shop.board.entity.Board;
 import com.forme.shop.board.repository.BoardRepository;
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
@@ -69,6 +70,9 @@ public class BoardService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
+        // 본인(또는 관리자) 명의로만 게시글 작성 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         Board board = Board.builder()
                 .member(member)
                 .title(dto.getTitle())
@@ -84,6 +88,9 @@ public class BoardService {
         Board board = boardRepository.findById(boardId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다."));
 
+        // 본인(또는 관리자) 소유의 게시글만 수정 가능
+        SecurityUtil.checkOwnerOrAdmin(board.getMember().getEmail());
+
         // null 체크 후 값이 있을 때만 수정
         if (dto.getTitle()   != null) board.setTitle(dto.getTitle());
         if (dto.getContent() != null) board.setContent(dto.getContent());
@@ -97,6 +104,10 @@ public class BoardService {
     public void deleteBoard(Long boardId) {
         Board board = boardRepository.findById(boardId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다."));
+
+        // 본인(또는 관리자) 소유의 게시글만 삭제 가능
+        SecurityUtil.checkOwnerOrAdmin(board.getMember().getEmail());
+
         board.setIsActive(false);  // 비활성화 처리
     }
 }

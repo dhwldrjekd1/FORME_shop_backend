@@ -1,5 +1,6 @@
 package com.forme.shop.qna.service;
 
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.product.entity.Product;
@@ -67,6 +68,9 @@ public class QnaService {
         Member member = memberRepository.findById(memberId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
+        // 본인(또는 관리자) 명의로만 질문 등록 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         // 상품이 있으면 존재 여부 확인 (선택사항)
         // product_id 가 null 이면 일반 문의로 처리
         Product product = null;
@@ -92,6 +96,9 @@ public class QnaService {
         Qna qna = qnaRepository.findById(qnaId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Q&A입니다."));
 
+        // 본인(또는 관리자) 소유의 Q&A만 수정 가능
+        SecurityUtil.checkOwnerOrAdmin(qna.getMember().getEmail());
+
         // null 체크 후 값이 있을 때만 수정 (부분 수정 가능)
         if (dto.getTitle()    != null) qna.setTitle(dto.getTitle());
         if (dto.getContent()  != null) qna.setContent(dto.getContent());
@@ -107,6 +114,10 @@ public class QnaService {
     public void deleteQna(Long qnaId) {
         Qna qna = qnaRepository.findById(qnaId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Q&A입니다."));
+
+        // 본인(또는 관리자) 소유의 Q&A만 삭제 가능
+        SecurityUtil.checkOwnerOrAdmin(qna.getMember().getEmail());
+
         qna.setIsActive(false);  // 비활성화 처리 (소프트 삭제)
     }
 

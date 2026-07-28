@@ -136,6 +136,10 @@ src/main/java/com/forme/shop/
 - **문제**: 이미지 업로드 시 파일명 확장자만 화이트리스트로 검사하고 있어서, 임의의 파일을 `.jpg`로 이름만 바꿔 업로드하면 그대로 통과되는 상태였음. (정적 리소스로만 서빙되어 원격 코드 실행 위험은 아니지만 실제 파일 검증은 아니었음)
 - **해결**: `ProductService.validateImageContent()`를 추가해 파일 앞부분 매직 바이트(JPEG `FF D8 FF`, PNG `89 50 4E 47...`, GIF `47 49 46 38`, WEBP `RIFF...WEBP`)를 직접 확인하고, 확장자가 주장하는 형식과 실제 내용이 다르면 업로드를 거부하도록 변경.
 
+### 게시판/댓글/Q&A 수정·삭제가 로그인 없이, 남의 글도 가능
+- **문제**: `SecurityConfig`가 `/api/boards/**`, `/api/comments/**`, `/api/qna/**`를 메서드 구분 없이 `permitAll()`로 열어둬서, 로그인하지 않은 상태로도 `PUT/DELETE`로 임의 게시글·댓글·Q&A를 수정·삭제할 수 있었음. 게다가 각 서비스(`BoardService`/`CommentService`/`QnaService`)의 작성·수정·삭제 메서드 어디에도 작성자 검증이 없어서, 로그인은 했더라도 URL의 id만 바꾸면 다른 회원의 글을 수정·삭제하거나(IDOR) 다른 회원 명의로 글을 작성할 수 있었음.
+- **해결**: 조회(GET)만 `permitAll`로 남기고 나머지 메서드는 `authenticated()`로 폴백되도록 `SecurityConfig`를 `HttpMethod.GET` 기준으로 좁힘. 이미 소유자 검증이 일관되게 적용돼 있던 `CartService`와 동일한 패턴으로, 세 서비스의 작성/수정/삭제 메서드에 `SecurityUtil.checkOwnerOrAdmin()`을 추가. 관리자 전용 삭제 엔드포인트(`/api/admin/boards/{id}` 등)는 같은 서비스 메서드를 공유하며 `checkOwnerOrAdmin`이 관리자를 통과시키므로 그대로 동작.
+
 ---
 
 ## 빌드 및 배포
