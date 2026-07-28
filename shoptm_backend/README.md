@@ -140,6 +140,10 @@ src/main/java/com/forme/shop/
 - **문제**: `SecurityConfig`가 `/api/boards/**`, `/api/comments/**`, `/api/qna/**`를 메서드 구분 없이 `permitAll()`로 열어둬서, 로그인하지 않은 상태로도 `PUT/DELETE`로 임의 게시글·댓글·Q&A를 수정·삭제할 수 있었음. 게다가 각 서비스(`BoardService`/`CommentService`/`QnaService`)의 작성·수정·삭제 메서드 어디에도 작성자 검증이 없어서, 로그인은 했더라도 URL의 id만 바꾸면 다른 회원의 글을 수정·삭제하거나(IDOR) 다른 회원 명의로 글을 작성할 수 있었음.
 - **해결**: 조회(GET)만 `permitAll`로 남기고 나머지 메서드는 `authenticated()`로 폴백되도록 `SecurityConfig`를 `HttpMethod.GET` 기준으로 좁힘. 이미 소유자 검증이 일관되게 적용돼 있던 `CartService`와 동일한 패턴으로, 세 서비스의 작성/수정/삭제 메서드에 `SecurityUtil.checkOwnerOrAdmin()`을 추가. 관리자 전용 삭제 엔드포인트(`/api/admin/boards/{id}` 등)는 같은 서비스 메서드를 공유하며 `checkOwnerOrAdmin`이 관리자를 통과시키므로 그대로 동작.
 
+### 찜 목록에 소유자 검증이 통째로 빠짐
+- **문제**: `WishlistService`의 조회·추가·삭제 어디에도 `SecurityUtil.checkOwnerOrAdmin()`이 없어서, 로그인한 회원이 `/api/members/{memberId}/wishlist`의 `memberId`만 다른 회원 것으로 바꾸면 그 회원의 찜 목록을 보고, 마음대로 추가·삭제할 수 있었음(IDOR). 같은 구조인 `CartService`는 모든 메서드에 이 검증이 이미 붙어 있어 Wishlist만 빠뜨린 것이 명확했음.
+- **해결**: `getWishlist`/`addWishlist`/`removeWishlist` 모두 회원을 조회한 뒤 `SecurityUtil.checkOwnerOrAdmin(member.getEmail())`을 거치도록 추가. `addWishlist`는 "이미 찜한 상품" 여부를 확인하기 전에 소유자 검증부터 하도록 순서도 바꿔, 접근 권한이 없는 요청에 목록 상태를 흘리지 않게 함.
+
 ---
 
 ## 빌드 및 배포

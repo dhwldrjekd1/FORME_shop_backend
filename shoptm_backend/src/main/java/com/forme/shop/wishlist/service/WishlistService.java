@@ -1,5 +1,6 @@
 package com.forme.shop.wishlist.service;
 
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.product.entity.Product;
@@ -24,6 +25,11 @@ public class WishlistService {
     private final ProductRepository productRepository;
 
     public List<WishlistResponseDto> getWishlist(Long memberId) {
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+        // 본인(또는 관리자)의 찜 목록만 조회 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         return wishlistRepository.findByMemberId(memberId).stream()
                 .map(WishlistResponseDto::from)
                 .collect(Collectors.toList());
@@ -31,11 +37,14 @@ public class WishlistService {
 
     @Transactional
     public WishlistResponseDto addWishlist(Long memberId, Long productId) {
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+        // 본인(또는 관리자)의 찜 목록에만 추가 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         if (wishlistRepository.existsByMemberIdAndProductId(memberId, productId)) {
             throw new IllegalArgumentException("이미 찜한 상품입니다.");
         }
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
@@ -45,6 +54,11 @@ public class WishlistService {
 
     @Transactional
     public void removeWishlist(Long memberId, Long productId) {
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+        // 본인(또는 관리자) 소유의 찜 목록에서만 삭제 가능
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
         wishlistRepository.deleteByMemberIdAndProductId(memberId, productId);
     }
 
