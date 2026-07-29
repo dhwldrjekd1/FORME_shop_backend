@@ -55,13 +55,11 @@ public class OrderService {
             Product product = productRepository.findById(itemDto.getProductId())
                     .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
-            // 재고 확인
-            if (product.getStock() < itemDto.getQuantity()) {
+            // 재고 확인 + 차감을 원자적 UPDATE 한 번으로 처리 (동시 주문으로 인한 오버셀 방지)
+            int updated = productRepository.decreaseStockIfAvailable(product.getId(), itemDto.getQuantity());
+            if (updated == 0) {
                 throw new IllegalArgumentException(product.getName() + "의 재고가 부족합니다.");
             }
-
-            // 재고 차감
-            product.setStock(product.getStock() - itemDto.getQuantity());
 
             // 세일 할인 적용된 단가 계산
             int unitPrice = product.getPrice();
@@ -203,11 +201,28 @@ public class OrderService {
                 .collect(Collectors.toList());
     }
 
+    private static final java.util.Set<String> VALID_ORDER_STATUSES = java.util.Set.of(
+            "PENDING", "PAID", "PREPARING", "SHIPPED", "DELIVERED", "CANCELLED");
+
     // 관리자 - 주문 상태 변경
     @Transactional
     public OrderResponseDto updateOrderStatus(Long orderId, OrderRequestDto.UpdateStatus dto) {
+        if (!VALID_ORDER_STATUSES.contains(dto.getStatus())) {
+            throw new IllegalArgumentException("올바르지 않은 주문 상태입니다.");
+        }
+
         Orders orders = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+
+        // 재고는 주문 생성 시점에 이미 차감돼 있으므로, 취소가 아니던 주문이 취소로
+        // 바뀔 때는(회원 본인 취소 cancelOrder()와 동일하게) 재고를 복구해야 함.
+        // 이미 취소된 주문을 다시 취소 처리해도 중복 복구되지 않도록 이전 상태를 확인.
+        if ("CANCELLED".equals(dto.getStatus()) && !"CANCELLED".equals(orders.getStatus())) {
+            for (OrderItem item : orders.getOrderItems()) {
+                item.getProduct().setStock(
+                        item.getProduct().getStock() + item.getQuantity());
+            }
+        }
 
         orders.setStatus(dto.getStatus());  // 상태 변경 (더티 체킹으로 자동 저장)
         return OrderResponseDto.from(orders);

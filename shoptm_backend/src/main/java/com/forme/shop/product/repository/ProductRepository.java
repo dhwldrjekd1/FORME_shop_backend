@@ -3,9 +3,20 @@ package com.forme.shop.product.repository;
 import com.forme.shop.product.entity.Product;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.util.List;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
+
+    // 재고가 충분할 때만 원자적으로 차감 - 조회 후 다시 쓰는(read-then-write) 방식은
+    // 동시 주문 시 같은 재고를 여러 요청이 동시에 통과시켜 오버셀을 일으킬 수 있어,
+    // "재고 >= 주문수량"을 DB 단에서 함께 확인하는 조건부 UPDATE로 처리한다.
+    // 반환값(영향받은 행 수)이 0이면 재고 부족으로 차감이 적용되지 않은 것.
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Product p SET p.stock = p.stock - :quantity WHERE p.id = :productId AND p.stock >= :quantity")
+    int decreaseStockIfAvailable(@Param("productId") Long productId, @Param("quantity") Integer quantity);
 
     // SELECT * FROM products WHERE is_active = true
     // 삭제되지 않은 전체 상품 목록 조회

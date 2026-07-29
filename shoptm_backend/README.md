@@ -152,6 +152,10 @@ src/main/java/com/forme/shop/
 - **문제**: `ReviewService.updateReview`/`deleteReview`에 소유자 검증이 없어서 로그인한 사용자가 `reviewId`만 바꾸면 남의 리뷰를 수정·삭제할 수 있었음(IDOR). 게다가 `createReview`는 `dto.getOrderId()`가 실제로 그 회원의 주문인지, 그 주문에 리뷰 대상 상품이 포함돼 있는지 전혀 검증하지 않아서, 남의 주문 id를 넣거나 자기 주문이라도 사지 않은 상품에 걸어서 "구매 확인(orders 연결)" 표시가 붙은 리뷰를 위조할 수 있었음. `ReviewController.createReview`가 모든 예외를 `catch(Exception)`으로 삼켜 `500`으로만 응답하고 있어서, 이 검증들을 추가해도 클라이언트가 원인을 구분할 수 없는 상태이기도 했음.
 - **해결**: `CartService`와 동일한 패턴으로 작성·수정·삭제에 `SecurityUtil.checkOwnerOrAdmin()` 추가. `createReview`에 `orderId`가 있을 때 그 주문이 실제로 해당 회원 소유인지, 리뷰 대상 상품이 그 주문에 포함돼 있는지 검증하는 로직 추가. `ReviewController`의 불필요한 `catch(Exception)`을 제거해 `GlobalExceptionHandler`가 검증 실패를 `400`/`403`으로 정확히 응답하도록 정리(프론트는 이미 `orderId`를 항상 `null`로 보내고 있어 이 경로는 API 직접 호출 방어용).
 
+### 주문 생성 시 재고 차감이 동시 요청에 취약 + 관리자 취소 시 재고 미복구
+- **문제**: `OrderService.createOrder`가 재고 확인(`product.getStock() < quantity`)과 차감(`product.setStock(...)`)을 조회 후 다시 쓰는(read-then-write) 방식으로 처리해서, 같은 상품에 동시에 여러 주문이 들어오면 둘 다 "재고 충분" 판정을 통과해 실제 재고보다 많이 팔리는(오버셀) 레이스 컨디션이 있었음. 또한 회원 본인이 취소하면(`cancelOrder`) 재고를 복구하지만, 관리자가 주문 상태를 변경하는 `updateOrderStatus`는 상태값을 검증도 없이 그대로 저장하기만 해서, 관리자가 주문을 CANCELLED로 바꿔도 이미 차감된 재고가 복구되지 않고 영구히 사라지는 문제가 있었음.
+- **해결**: `ProductRepository`에 `"재고 >= 주문수량"`일 때만 적용되는 조건부 원자적 UPDATE(`decreaseStockIfAvailable`)를 추가해 재고 확인과 차감을 하나의 DB 연산으로 처리. `updateOrderStatus`에는 상태값을 `PENDING/PAID/PREPARING/SHIPPED/DELIVERED/CANCELLED`로 검증하는 화이트리스트를 추가하고, 취소가 아니던 주문이 CANCELLED로 바뀔 때만(이미 취소된 주문을 다시 취소해도 중복 복구되지 않도록) `cancelOrder`와 동일하게 재고를 복구하도록 수정. 재고 5개인 상품에 동시에 10건을 주문해 정확히 5건만 성공하고 재고가 0으로 남는 것, 관리자가 취소하면 재고가 1 복구되고 같은 주문을 다시 취소해도 중복 복구되지 않는 것, 잘못된 상태값은 거부되는 것을 실제로 확인함.
+
 
 ---
 
