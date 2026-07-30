@@ -3,6 +3,7 @@ package com.forme.shop.delivery.service;
 import com.forme.shop.delivery.dto.DeliveryRequestDto;
 import com.forme.shop.delivery.dto.DeliveryResponseDto;
 import com.forme.shop.delivery.entity.Delivery;
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.delivery.repository.DeliveryRepository;
 import com.forme.shop.order.entity.Orders;
 import com.forme.shop.order.repository.OrderRepository;
@@ -23,6 +24,12 @@ public class DeliveryService {
 
     // 특정 주문의 배송 정보 조회
     public DeliveryResponseDto getDelivery(Long orderId) {
+        Orders orders = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+
+        // 본인(또는 관리자) 소유의 주문 배송 정보만 조회 가능
+        SecurityUtil.checkOwnerOrAdmin(orders.getMember().getEmail());
+
         Delivery delivery = deliveryRepository.findByOrdersId(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("배송 정보가 없습니다."));
         return DeliveryResponseDto.from(delivery);

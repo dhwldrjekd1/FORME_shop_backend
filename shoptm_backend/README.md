@@ -164,6 +164,10 @@ src/main/java/com/forme/shop/
 - **문제**: `ProductService.deleteProduct()`의 주석은 "소프트 삭제 - DB에서 실제 삭제 안 하고 is_active = false로 변경"이라고 되어 있는데, 실제 코드는 바로 옆에 "DB에서 완전 삭제"라는 반대되는 주석과 함께 `productRepository.delete(product)`로 하드 삭제하고 있었음. `getProduct()`는 이미 `!product.getIsActive()`면 "삭제된 상품입니다"를 던지도록 소프트 삭제를 전제로 짜여 있어서, 이 경로는 사실상 죽은 코드였음. 상품을 하드 삭제하면 그 상품을 참조하는 과거 주문(`order_items`)·리뷰·Q&A·찜이 고아 참조로 남거나(FK 제약이 있다면 삭제 자체가 실패) 주문 내역에서 상품 정보가 사라질 위험이 있었음.
 - **해결**: `productRepository.delete(product)`를 `product.setIsActive(false)`로 교체해 실제로 소프트 삭제되도록 수정(이미 있던 `isActive` 필드와 전 구간의 "활성 상품만 조회" 패턴을 그대로 활용). 상품에 주문을 하나 걸어둔 뒤 관리자로 삭제해서, DB 행은 `is_active=false`로 그대로 남고, 목록/단건 조회에서는 정상적으로 빠지며, 기존 주문은 상품명·이미지가 그대로 표시되는 것을 실제로 확인함.
 
+### 배송 조회 API에 소유자 검증 누락
+- **문제**: `GET /api/orders/{orderId}/delivery`(일반회원용 배송 조회)가 `orderId`로 배송 정보를 바로 조회해서 반환할 뿐, 그 주문이 로그인한 회원 본인 것인지 전혀 확인하지 않았음. 로그인만 하면 orderId를 바꿔가며 다른 회원의 배송 상태·운송장 번호를 볼 수 있었음(IDOR). 같은 패키지의 `OrderService.getOrder()`는 이미 이 검증이 있는 것과 대조됨.
+- **해결**: `DeliveryService.getDelivery()`에서 배송 정보를 조회하기 전에 먼저 주문을 조회해 `SecurityUtil.checkOwnerOrAdmin(orders.getMember().getEmail())`을 거치도록 추가. 실제로 주문 하나를 만들고 관리자가 배송 정보를 등록한 뒤, 다른 회원 계정으로 조회를 시도하면 `403`, 주문 본인과 관리자는 `200`으로 정상 조회되는 것을 확인함.
+
 
 ---
 
