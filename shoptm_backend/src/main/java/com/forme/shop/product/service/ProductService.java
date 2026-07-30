@@ -309,11 +309,12 @@ public class ProductService {
 
     // 상품 삭제 (관리자) - 소프트 삭제
     // DB 에서 실제 삭제 안 하고 is_active = false 로 변경
+    // (하드 삭제하면 이 상품을 참조하는 과거 주문/리뷰/Q&A/찜이 깨지거나 함께 사라짐)
     @Transactional
     public void deleteProduct(Long id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
-        productRepository.delete(product);  // DB에서 완전 삭제
+        product.setIsActive(false);
     }
 
     // 상품 ID 변경 (네이티브 SQL)

@@ -160,6 +160,10 @@ src/main/java/com/forme/shop/
 - **문제**: `Review`/`Qna`/`Wishlist`의 `member`/`product`(찜은 `product`, `product.category`까지)가 LAZY 관계인데, 각 `ResponseDto.from()`이 매 항목마다 `member.getName()`/`product.getName()` 등을 읽어서 목록 조회 API(내 리뷰, 상품별 리뷰, 관리자 전체 리뷰, Q&A 목록, 찜 목록)를 호출할 때마다 항목 수만큼 추가 쿼리가 나가고 있었음. 관리자 대시보드(`AdminService.getDashboard()`)는 브랜드별 매출 집계를 위해 전체 주문의 `orderItems`와 그 안의 `product`를 순회해서 주문 수에 비례해 쿼리가 늘었고, 최근 주문 5건 조회를 위해 전체 주문 목록을 별도로 다시 조회하는 중복 쿼리, 판매중/품절 상품 집계를 위해 활성 상품 목록을 두 번 조회하는 중복 쿼리도 있었음.
 - **해결**: 세 리포지토리의 목록 조회 메서드에 `@EntityGraph`로 필요한 연관관계를 함께 조회하도록 추가(리뷰/Q&A는 `member`+`product`, 찜은 `product`+`product.category`). 관리자 전체 리뷰 조회는 `findAll()` 대신 `@EntityGraph`를 붙일 수 있는 `findAllByOrderByCreatedAtDesc()`로 교체. `OrderRepository`에 `member`/`orderItems`/`orderItems.product`를 한 번에 JOIN FETCH하는 대시보드 전용 조회를 추가해 기존 두 번의 전체 주문 조회를 하나로 합치고, 활성 상품 목록도 한 번만 조회해 재사용하도록 정리. 테스트 계정으로 리뷰·Q&A·찜을 5건씩 만든 뒤 SQL 로그로 확인한 결과, 각 목록 조회가 항목 수와 무관하게 JOIN이 포함된 쿼리 1번으로 처리됐고, 대시보드 전체 호출도 쿼리 4번(회원 목록/주문+연관관계 JOIN FETCH/상품 카운트/활성 상품 목록)으로 끝나는 것을 확인함.
 
+### 상품 삭제가 주석과 달리 실제로는 하드 삭제
+- **문제**: `ProductService.deleteProduct()`의 주석은 "소프트 삭제 - DB에서 실제 삭제 안 하고 is_active = false로 변경"이라고 되어 있는데, 실제 코드는 바로 옆에 "DB에서 완전 삭제"라는 반대되는 주석과 함께 `productRepository.delete(product)`로 하드 삭제하고 있었음. `getProduct()`는 이미 `!product.getIsActive()`면 "삭제된 상품입니다"를 던지도록 소프트 삭제를 전제로 짜여 있어서, 이 경로는 사실상 죽은 코드였음. 상품을 하드 삭제하면 그 상품을 참조하는 과거 주문(`order_items`)·리뷰·Q&A·찜이 고아 참조로 남거나(FK 제약이 있다면 삭제 자체가 실패) 주문 내역에서 상품 정보가 사라질 위험이 있었음.
+- **해결**: `productRepository.delete(product)`를 `product.setIsActive(false)`로 교체해 실제로 소프트 삭제되도록 수정(이미 있던 `isActive` 필드와 전 구간의 "활성 상품만 조회" 패턴을 그대로 활용). 상품에 주문을 하나 걸어둔 뒤 관리자로 삭제해서, DB 행은 `is_active=false`로 그대로 남고, 목록/단건 조회에서는 정상적으로 빠지며, 기존 주문은 상품명·이미지가 그대로 표시되는 것을 실제로 확인함.
+
 
 ---
 
