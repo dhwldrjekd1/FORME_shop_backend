@@ -5,6 +5,7 @@ import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.order.entity.Orders;
 import com.forme.shop.order.repository.OrderRepository;
+import com.forme.shop.product.entity.Product;
 import com.forme.shop.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,8 +31,9 @@ public class AdminService {
         // 전체 회원 목록 한번에 조회 (반복 쿼리 방지)
         List<Member> allMembers = memberRepository.findAll();
 
-        // 전체 주문 목록 한번에 조회 (반복 쿼리 방지)
-        List<Orders> allOrders = orderRepository.findAll();
+        // 전체 주문 목록 한번에 조회 - member/orderItems/orderItems.product까지 함께 JOIN FETCH해서
+        // 아래 브랜드별 매출 집계, 최근 주문 목록에서 주문마다 추가 쿼리(N+1)가 나가지 않도록 함
+        List<Orders> allOrders = orderRepository.findAllWithDetailsOrderByCreatedAtDesc();
 
         // =====================
         // 회원 통계
@@ -49,11 +51,12 @@ public class AdminService {
         // =====================
         long totalProducts   = productRepository.count();  // 전체 상품 수
 
-        // isActive = true 인 상품 = 판매중 상품
-        long onSaleProducts  = productRepository.findByIsActiveTrue().size();
+        // isActive = true 인 상품 목록 - 판매중 상품 수/품절 상품 수 계산에 공용으로 사용 (중복 조회 방지)
+        List<Product> activeProducts = productRepository.findByIsActiveTrue();
+        long onSaleProducts  = activeProducts.size();
 
         // isActive = true 이면서 stock = 0 인 상품 = 품절 상품
-        long soldOutProducts = productRepository.findByIsActiveTrue().stream()
+        long soldOutProducts = activeProducts.stream()
                 .filter(p -> p.getStock() == 0)
                 .count();
 
@@ -92,8 +95,7 @@ public class AdminService {
         // 최근 주문 5건
         // =====================
         List<DashboardResponseDto.RecentOrderDto> recentOrders =
-                orderRepository.findAllByOrderByCreatedAtDesc()
-                        .stream()
+                allOrders.stream()   // 이미 createdAt DESC로 조회해뒀으므로 별도 재조회 없이 그대로 사용
                         .limit(5)   // 최근 5건만 가져옴
                         .map(o -> DashboardResponseDto.RecentOrderDto.builder()
                                 .orderId(o.getId())

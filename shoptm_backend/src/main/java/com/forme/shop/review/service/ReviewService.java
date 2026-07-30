@@ -134,7 +134,7 @@ public class ReviewService {
 
     // 관리자 - 전체 리뷰 목록 조회
     public List<ReviewResponseDto> getAllReviews() {
-        return reviewRepository.findAll()
+        return reviewRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
                 .map(ReviewResponseDto::from)
                 .collect(Collectors.toList());

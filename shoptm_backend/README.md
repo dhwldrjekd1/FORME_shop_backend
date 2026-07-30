@@ -156,6 +156,10 @@ src/main/java/com/forme/shop/
 - **문제**: `OrderService.createOrder`가 재고 확인(`product.getStock() < quantity`)과 차감(`product.setStock(...)`)을 조회 후 다시 쓰는(read-then-write) 방식으로 처리해서, 같은 상품에 동시에 여러 주문이 들어오면 둘 다 "재고 충분" 판정을 통과해 실제 재고보다 많이 팔리는(오버셀) 레이스 컨디션이 있었음. 또한 회원 본인이 취소하면(`cancelOrder`) 재고를 복구하지만, 관리자가 주문 상태를 변경하는 `updateOrderStatus`는 상태값을 검증도 없이 그대로 저장하기만 해서, 관리자가 주문을 CANCELLED로 바꿔도 이미 차감된 재고가 복구되지 않고 영구히 사라지는 문제가 있었음.
 - **해결**: `ProductRepository`에 `"재고 >= 주문수량"`일 때만 적용되는 조건부 원자적 UPDATE(`decreaseStockIfAvailable`)를 추가해 재고 확인과 차감을 하나의 DB 연산으로 처리. `updateOrderStatus`에는 상태값을 `PENDING/PAID/PREPARING/SHIPPED/DELIVERED/CANCELLED`로 검증하는 화이트리스트를 추가하고, 취소가 아니던 주문이 CANCELLED로 바뀔 때만(이미 취소된 주문을 다시 취소해도 중복 복구되지 않도록) `cancelOrder`와 동일하게 재고를 복구하도록 수정. 재고 5개인 상품에 동시에 10건을 주문해 정확히 5건만 성공하고 재고가 0으로 남는 것, 관리자가 취소하면 재고가 1 복구되고 같은 주문을 다시 취소해도 중복 복구되지 않는 것, 잘못된 상태값은 거부되는 것을 실제로 확인함.
 
+### 관리자 대시보드/리뷰/QnA/찜 목록에 새로운 N+1
+- **문제**: `Review`/`Qna`/`Wishlist`의 `member`/`product`(찜은 `product`, `product.category`까지)가 LAZY 관계인데, 각 `ResponseDto.from()`이 매 항목마다 `member.getName()`/`product.getName()` 등을 읽어서 목록 조회 API(내 리뷰, 상품별 리뷰, 관리자 전체 리뷰, Q&A 목록, 찜 목록)를 호출할 때마다 항목 수만큼 추가 쿼리가 나가고 있었음. 관리자 대시보드(`AdminService.getDashboard()`)는 브랜드별 매출 집계를 위해 전체 주문의 `orderItems`와 그 안의 `product`를 순회해서 주문 수에 비례해 쿼리가 늘었고, 최근 주문 5건 조회를 위해 전체 주문 목록을 별도로 다시 조회하는 중복 쿼리, 판매중/품절 상품 집계를 위해 활성 상품 목록을 두 번 조회하는 중복 쿼리도 있었음.
+- **해결**: 세 리포지토리의 목록 조회 메서드에 `@EntityGraph`로 필요한 연관관계를 함께 조회하도록 추가(리뷰/Q&A는 `member`+`product`, 찜은 `product`+`product.category`). 관리자 전체 리뷰 조회는 `findAll()` 대신 `@EntityGraph`를 붙일 수 있는 `findAllByOrderByCreatedAtDesc()`로 교체. `OrderRepository`에 `member`/`orderItems`/`orderItems.product`를 한 번에 JOIN FETCH하는 대시보드 전용 조회를 추가해 기존 두 번의 전체 주문 조회를 하나로 합치고, 활성 상품 목록도 한 번만 조회해 재사용하도록 정리. 테스트 계정으로 리뷰·Q&A·찜을 5건씩 만든 뒤 SQL 로그로 확인한 결과, 각 목록 조회가 항목 수와 무관하게 JOIN이 포함된 쿼리 1번으로 처리됐고, 대시보드 전체 호출도 쿼리 4번(회원 목록/주문+연관관계 JOIN FETCH/상품 카운트/활성 상품 목록)으로 끝나는 것을 확인함.
+
 
 ---
 
