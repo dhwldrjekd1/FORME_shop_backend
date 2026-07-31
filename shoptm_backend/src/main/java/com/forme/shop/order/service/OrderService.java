@@ -141,7 +141,10 @@ public class OrderService {
 
         if (!newGrade.equals(member.getGrade())) {
             member.setGrade(newGrade);
-            // @Transactional이므로 자동 저장
+            // 이 시점의 member는 위 decreaseStockIfAvailable()의 clearAutomatically=true로
+            // 영속성 컨텍스트가 비워지면서 이미 detach된 상태라, 더티 체킹으로는 저장되지 않는다.
+            // (그래서 명시적으로 save 해야 함 - detached 엔티티도 id가 있으면 merge로 정상 반영됨)
+            memberRepository.save(member);
         }
     }
 

@@ -168,6 +168,9 @@ src/main/java/com/forme/shop/
 - **문제**: `GET /api/orders/{orderId}/delivery`(일반회원용 배송 조회)가 `orderId`로 배송 정보를 바로 조회해서 반환할 뿐, 그 주문이 로그인한 회원 본인 것인지 전혀 확인하지 않았음. 로그인만 하면 orderId를 바꿔가며 다른 회원의 배송 상태·운송장 번호를 볼 수 있었음(IDOR). 같은 패키지의 `OrderService.getOrder()`는 이미 이 검증이 있는 것과 대조됨.
 - **해결**: `DeliveryService.getDelivery()`에서 배송 정보를 조회하기 전에 먼저 주문을 조회해 `SecurityUtil.checkOwnerOrAdmin(orders.getMember().getEmail())`을 거치도록 추가. 실제로 주문 하나를 만들고 관리자가 배송 정보를 등록한 뒤, 다른 회원 계정으로 조회를 시도하면 `403`, 주문 본인과 관리자는 `200`으로 정상 조회되는 것을 확인함.
 
+### (교차검증에서 발견) 재고 원자적 UPDATE 도입 후 등급 자동 승급이 저장되지 않음
+- **문제**: 위 재고 동시성 수정에서 쓴 `@Modifying(clearAutomatically = true)`는 실행 직후 영속성 컨텍스트 전체를 비운다. `createOrder()`는 맨 앞에서 `member`를 조회해두고 나중에 `updateMemberGrade(member)`에서 `member.setGrade(newGrade)`로 등급을 바꾸는데, 그 사이에 있는 `decreaseStockIfAvailable()` 호출이 `member`를 detach시켜버려서 더티 체킹이 더 이상 적용되지 않았음 — `member.setGrade()`를 호출해도 DB에는 반영되지 않는 상태였음. 실제로 50만원 이상 주문을 넣어 확인한 결과 등급이 BRONZE에서 전혀 바뀌지 않는 것을 재현함(수정 커밋에는 이 사이드이펙트를 놓쳤었고, 독립적인 교차검증 과정에서 발견함).
+- **해결**: `updateMemberGrade()`에서 `member.setGrade(newGrade)` 뒤에 `memberRepository.save(member)`를 명시적으로 호출하도록 추가. detach된 엔티티도 id가 있으면 `save()`(내부적으로 `merge()`)가 정상적으로 병합·저장함. 같은 시나리오(50만원 이상 주문)로 재확인해 등급이 BRONZE → SILVER로 정상 반영되는 것을 확인함.
 
 ---
 
