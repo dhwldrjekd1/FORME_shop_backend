@@ -172,6 +172,11 @@ src/main/java/com/forme/shop/
 - **문제**: 위 재고 동시성 수정에서 쓴 `@Modifying(clearAutomatically = true)`는 실행 직후 영속성 컨텍스트 전체를 비운다. `createOrder()`는 맨 앞에서 `member`를 조회해두고 나중에 `updateMemberGrade(member)`에서 `member.setGrade(newGrade)`로 등급을 바꾸는데, 그 사이에 있는 `decreaseStockIfAvailable()` 호출이 `member`를 detach시켜버려서 더티 체킹이 더 이상 적용되지 않았음 — `member.setGrade()`를 호출해도 DB에는 반영되지 않는 상태였음. 실제로 50만원 이상 주문을 넣어 확인한 결과 등급이 BRONZE에서 전혀 바뀌지 않는 것을 재현함(수정 커밋에는 이 사이드이펙트를 놓쳤었고, 독립적인 교차검증 과정에서 발견함).
 - **해결**: `updateMemberGrade()`에서 `member.setGrade(newGrade)` 뒤에 `memberRepository.save(member)`를 명시적으로 호출하도록 추가. detach된 엔티티도 id가 있으면 `save()`(내부적으로 `merge()`)가 정상적으로 병합·저장함. 같은 시나리오(50만원 이상 주문)로 재확인해 등급이 BRONZE → SILVER로 정상 반영되는 것을 확인함.
 
+### 토스 결제 승인 후 주문 생성이 실패하면 카드는 결제됐는데 아무 기록도 남지 않음 (2026.08.10)
+- **문제**: `TossController.confirmPayment()`는 토스 결제 승인 API를 호출해 카드 결제를 그 자리에서 확정시키지만, `paymentKey`/승인 금액 등을 어디에도 저장하지 않고 그대로 응답만 돌려주는 단순 프록시였음. 이후 프론트가 이어서 호출하는 `POST /members/{id}/orders`(`OrderService.createOrder`)가 재고 부족·상품 삭제 등 어떤 이유로든 실패하면(해당 메서드는 `@Transactional`이라 실패 시 재고 차감까지 전부 롤백됨), 카드는 이미 결제됐는데 그 사실이 DB 어디에도 남지 않고, 환불(취소)도 자동으로 이뤄지지 않는 상태가 됐음.
+- **원인**: 결제 승인(PG사 쪽 상태 변경)과 주문 생성(우리 DB 쪽 상태 변경)이 서로 다른 두 트랜잭션으로 완전히 분리되어 있는데, 그 사이를 연결하는 기록이나 실패 시 보상(compensating) 처리가 전혀 없었음.
+- **해결**: 결제 승인 성공 시점에 즉시 `payments` 테이블(신규)에 기록을 남기도록 변경(`PaymentService.recordConfirmed`). 응답에 `paymentKey`를 포함시켜 프론트가 주문 생성 요청에 그대로 실어 보내도록 하고, `OrderService.createOrder`는 이 `paymentKey`가 있으면: 주문 생성 성공 시 결제 기록을 해당 주문에 연결(`LINKED`)하고, 실패 시 `PaymentService.refundAndMarkFailed()`(별도 트랜잭션 `REQUIRES_NEW`로 실행되어 주문 생성 트랜잭션이 롤백돼도 함께 롤백되지 않음)가 토스 취소 API를 호출해 자동 환불하고 `REFUNDED`로 남기며, 환불 호출 자체가 실패하면 `REFUND_FAILED`로 남겨 수동 확인이 가능하게 함. 사용자에게는 "결제가 자동으로 취소되었습니다" 또는 "환불 실패, 고객센터 문의" 메시지가 명확히 전달됨. 임시 포트로 별도 기동한 서버에 실제 관리자 계정으로 로그인해, (1) 존재하지 않는 상품으로 주문을 실패시켜 가짜 결제가 토스 테스트 API에서 `NOT_FOUND_PAYMENT`로 환불도 실패하며 `REFUND_FAILED`로 남는 것, (2) 정상 상품으로 주문을 성공시켜 결제 기록이 실제 생성된 주문에 `LINKED`로 연결되고 재고가 정확히 차감되는 것 둘 다 실제 DB 상태로 확인한 뒤 테스트 데이터를 정리함. `ddl-auto: validate` 환경이라 `payments` 테이블은 `shoptm.sql`과 실제 운영 DB에 직접 반영함.
+
 ---
 
 ## 빌드 및 배포
