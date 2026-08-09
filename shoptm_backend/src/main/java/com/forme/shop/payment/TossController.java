@@ -1,5 +1,6 @@
 package com.forme.shop.payment;
 
+import com.forme.shop.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,6 +19,7 @@ public class TossController {
     private static final Logger log = LoggerFactory.getLogger(TossController.class);
 
     private final TossConfig tossConfig;
+    private final PaymentService paymentService;
 
     @GetMapping("/client-key")
     public ResponseEntity<?> getClientKey() {
@@ -60,9 +62,15 @@ public class TossController {
                         .body(Map.of("success", false, "message", "결제 승인 응답에 금액 정보가 없습니다."));
             }
 
+            // 결제 승인이 여기서 이미 확정(카드 결제 완료)됐으므로, 이후 주문 생성이
+            // 어떤 이유로든 실패해도 "결제는 됐는데 기록이 없는" 상태가 남지 않도록 즉시 저장.
+            // paymentKey는 그대로 응답에 포함해 프론트가 주문 생성 요청에 함께 실어 보내도록 함.
+            paymentService.recordConfirmed(paymentKey, orderId, ((Number) confirmedAmount).intValue());
+
             return ResponseEntity.ok(Map.of(
                     "success", true,
                     "amount", confirmedAmount,
+                    "paymentKey", paymentKey,
                     "data", response.getBody()
             ));
         } catch (Exception e) {

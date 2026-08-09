@@ -8,6 +8,7 @@ import com.forme.shop.order.dto.OrderResponseDto;
 import com.forme.shop.order.entity.OrderItem;
 import com.forme.shop.order.entity.Orders;
 import com.forme.shop.order.repository.OrderRepository;
+import com.forme.shop.payment.service.PaymentService;
 import com.forme.shop.product.entity.Product;
 import com.forme.shop.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
@@ -26,6 +27,7 @@ public class OrderService {
     private final OrderRepository orderRepository;
     private final MemberRepository memberRepository;
     private final ProductRepository productRepository;
+    private final PaymentService paymentService;
 
     // 주문 생성 (일반회원)
     @Transactional
@@ -38,69 +40,93 @@ public class OrderService {
         // 본인(또는 관리자)만 자신의 이름으로 주문 생성 가능
         SecurityUtil.checkOwnerOrAdmin(member.getEmail());
 
-        // 주문 엔티티 생성 (총액은 아래에서 계산 후 설정)
-        Orders orders = Orders.builder()
-                .member(member)
-                .receiverName(dto.getReceiverName())
-                .receiverPhone(dto.getReceiverPhone())
-                .address(dto.getAddress())
-                .totalPrice(0)  //  BigDecimal.ZERO → 0 으로 변경
-                .build();
+        // 토스 결제를 거쳐 들어온 주문인지 (승인 기록이 실제로 존재하는 경우만) — 있으면
+        // 아래에서 주문 생성이 실패했을 때 이미 승인된 결제를 자동으로 취소(환불)한다.
+        String paymentKey = dto.getPaymentKey();
+        boolean paymentConfirmed = paymentKey != null && paymentService.isConfirmed(paymentKey);
 
-        // 주문 상품 목록 처리
-        int totalPrice = 0;  //  BigDecimal → int 로 변경
-
-        for (OrderRequestDto.OrderItemDto itemDto : dto.getItems()) {
-            // 상품 존재 여부 확인
-            Product product = productRepository.findById(itemDto.getProductId())
-                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
-
-            // 재고 확인 + 차감을 원자적 UPDATE 한 번으로 처리 (동시 주문으로 인한 오버셀 방지)
-            int updated = productRepository.decreaseStockIfAvailable(product.getId(), itemDto.getQuantity());
-            if (updated == 0) {
-                throw new IllegalArgumentException(product.getName() + "의 재고가 부족합니다.");
-            }
-
-            // 세일 할인 적용된 단가 계산
-            int unitPrice = product.getPrice();
-            if (product.getDiscountRate() != null && product.getDiscountRate() > 0) {
-                unitPrice = (int) Math.round(product.getPrice() * (1 - product.getDiscountRate() / 100.0));
-            }
-
-            // 등급 할인 적용
-            int gradeDiscount = getGradeDiscount(member.getGrade());
-            if (gradeDiscount > 0) {
-                unitPrice = (int) Math.round(unitPrice * (1 - gradeDiscount / 100.0));
-            }
-
-            OrderItem orderItem = OrderItem.builder()
-                    .orders(orders)
-                    .product(product)
-                    .quantity(itemDto.getQuantity())
-                    .unitPrice(unitPrice)
-                    .size(itemDto.getSize())
+        Orders savedOrders;
+        try {
+            // 주문 엔티티 생성 (총액은 아래에서 계산 후 설정)
+            Orders orders = Orders.builder()
+                    .member(member)
+                    .receiverName(dto.getReceiverName())
+                    .receiverPhone(dto.getReceiverPhone())
+                    .address(dto.getAddress())
+                    .totalPrice(0)  //  BigDecimal.ZERO → 0 으로 변경
                     .build();
 
-            orders.getOrderItems().add(orderItem);
+            // 주문 상품 목록 처리
+            int totalPrice = 0;  //  BigDecimal → int 로 변경
 
-            totalPrice += unitPrice * itemDto.getQuantity();
-        }
+            for (OrderRequestDto.OrderItemDto itemDto : dto.getItems()) {
+                // 상품 존재 여부 확인
+                Product product = productRepository.findById(itemDto.getProductId())
+                        .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
-        orders.setTotalPrice(totalPrice);
+                // 재고 확인 + 차감을 원자적 UPDATE 한 번으로 처리 (동시 주문으로 인한 오버셀 방지)
+                int updated = productRepository.decreaseStockIfAvailable(product.getId(), itemDto.getQuantity());
+                if (updated == 0) {
+                    throw new IllegalArgumentException(product.getName() + "의 재고가 부족합니다.");
+                }
 
-        // 토스페이먼츠 결제를 거쳐 들어온 주문이면, 실제 결제 승인 금액(paidAmount)이
-        // 서버가 방금 계산한 진짜 주문 금액(totalPrice)과 정확히 같은지 검증한다.
-        // (클라이언트가 결제는 1000원짜리로 하고 주문만 훨씬 비싸게 생성하는 금액 위변조 방지)
-        if (dto.getPaidAmount() != null) {
-            if (!dto.getPaidAmount().equals(totalPrice)) {
-                throw new IllegalArgumentException(
-                        "결제 금액과 주문 금액이 일치하지 않습니다. (결제: " + dto.getPaidAmount() + "원, 주문: " + totalPrice + "원)");
+                // 세일 할인 적용된 단가 계산
+                int unitPrice = product.getPrice();
+                if (product.getDiscountRate() != null && product.getDiscountRate() > 0) {
+                    unitPrice = (int) Math.round(product.getPrice() * (1 - product.getDiscountRate() / 100.0));
+                }
+
+                // 등급 할인 적용
+                int gradeDiscount = getGradeDiscount(member.getGrade());
+                if (gradeDiscount > 0) {
+                    unitPrice = (int) Math.round(unitPrice * (1 - gradeDiscount / 100.0));
+                }
+
+                OrderItem orderItem = OrderItem.builder()
+                        .orders(orders)
+                        .product(product)
+                        .quantity(itemDto.getQuantity())
+                        .unitPrice(unitPrice)
+                        .size(itemDto.getSize())
+                        .build();
+
+                orders.getOrderItems().add(orderItem);
+
+                totalPrice += unitPrice * itemDto.getQuantity();
             }
-            orders.setStatus("PAID");
-            orders.setPaidAt(LocalDateTime.now());
+
+            orders.setTotalPrice(totalPrice);
+
+            // 토스페이먼츠 결제를 거쳐 들어온 주문이면, 실제 결제 승인 금액(paidAmount)이
+            // 서버가 방금 계산한 진짜 주문 금액(totalPrice)과 정확히 같은지 검증한다.
+            // (클라이언트가 결제는 1000원짜리로 하고 주문만 훨씬 비싸게 생성하는 금액 위변조 방지)
+            if (dto.getPaidAmount() != null) {
+                if (!dto.getPaidAmount().equals(totalPrice)) {
+                    throw new IllegalArgumentException(
+                            "결제 금액과 주문 금액이 일치하지 않습니다. (결제: " + dto.getPaidAmount() + "원, 주문: " + totalPrice + "원)");
+                }
+                orders.setStatus("PAID");
+                orders.setPaidAt(LocalDateTime.now());
+            }
+
+            savedOrders = orderRepository.save(orders);
+        } catch (RuntimeException e) {
+            // 이미 결제가 승인된 뒤였다면(재고 부족 등 어떤 이유로든) 주문을 만들지 못한 채
+            // 카드만 결제된 상태로 남지 않도록 여기서 즉시 자동 환불한다.
+            if (paymentConfirmed) {
+                boolean refunded = paymentService.refundAndMarkFailed(paymentKey, e.getMessage());
+                throw new IllegalArgumentException(refunded
+                        ? "주문 처리 중 오류가 발생해 결제가 자동으로 취소되었습니다. (" + e.getMessage() + ")"
+                        : "주문 처리 중 오류가 발생했고 결제 자동 취소에도 실패했습니다. 고객센터로 문의해주세요. (" + e.getMessage() + ")");
+            }
+            throw e;
         }
 
-        OrderResponseDto result = OrderResponseDto.from(orderRepository.save(orders));
+        OrderResponseDto result = OrderResponseDto.from(savedOrders);
+
+        if (paymentConfirmed) {
+            paymentService.markLinked(paymentKey, savedOrders);
+        }
 
         // 누적 구매 금액 기반 등급 자동 업그레이드
         updateMemberGrade(member);

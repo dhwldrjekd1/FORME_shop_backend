@@ -30,6 +30,10 @@ public class OrderRequestDto {
         // null이면 결제 없는 데모 주문(PENDING) — 값이 있으면 서버가 계산한 totalPrice와
         // 반드시 일치해야만 주문이 생성되고, 일치 시 즉시 PAID 처리됨 (OrderService.createOrder)
         private Integer paidAmount;
+
+        // 토스 결제 승인(confirm) 시 발급된 paymentKey — 있으면 주문 생성 실패 시
+        // 이 결제를 자동으로 취소(환불)하는 데 사용됨 (OrderService.createOrder)
+        private String paymentKey;
     }
 
     // 주문 상품 항목 DTO
