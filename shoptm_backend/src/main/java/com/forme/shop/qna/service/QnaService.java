@@ -26,38 +26,53 @@ public class QnaService {
     private final MemberRepository memberRepository;
     private final ProductRepository productRepository;
 
+    // 이 요청을 보낸 사람이 이 Q&A의 비밀글 내용을 볼 수 있는지 (작성자 본인 또는 관리자)
+    private boolean canViewSecret(Qna qna) {
+        if (SecurityUtil.isAdmin()) return true;
+        String current = SecurityUtil.getCurrentEmail();
+        return current != null && current.equals(qna.getMember().getEmail());
+    }
+
     // 전체 Q&A 목록 조회 (일반회원)
-    // is_active = true 인 Q&A 만 최신순으로 반환
+    // is_active = true 인 Q&A 만 최신순으로 반환. 비밀글은 작성자 본인/관리자가 아니면
+    // content/answer를 가려서 내려준다(목록 자체는 누구나 볼 수 있되 내용은 비공개).
     public List<QnaResponseDto> getAllQna() {
         return qnaRepository.findByIsActiveTrueOrderByCreatedAtDesc()
                 .stream()
-                .map(QnaResponseDto::from)
+                .map(qna -> QnaResponseDto.from(qna, canViewSecret(qna)))
                 .collect(Collectors.toList());
     }
 
-    // 특정 회원의 Q&A 목록 조회 (일반회원)
+    // 특정 회원의 Q&A 목록 조회 ("내 문의" — 본인 또는 관리자만 조회 가능)
     // member_id 로 필터링, is_active = true 인 것만 최신순 반환
     public List<QnaResponseDto> getMyQna(Long memberId) {
+        Member member = memberRepository.findById(memberId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+        // 본인(또는 관리자)만 조회 가능 — 그렇지 않으면 다른 회원의 문의(비밀글 포함)를
+        // memberId만 바꿔서 그대로 열람할 수 있었음
+        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+
+        // 전부 본인(또는 관리자가 조회하는 본인) 소유이므로 가릴 필요 없이 그대로 반환
         return qnaRepository.findByMemberIdAndIsActiveTrueOrderByCreatedAtDesc(memberId)
                 .stream()
                 .map(QnaResponseDto::from)
                 .collect(Collectors.toList());
     }
 
-    // 특정 상품의 Q&A 목록 조회
+    // 특정 상품의 Q&A 목록 조회 — 비밀글 내용은 작성자 본인/관리자가 아니면 가려서 내려줌
     // product_id 로 필터링, is_active = true 인 것만 최신순 반환
     public List<QnaResponseDto> getProductQna(Long productId) {
         return qnaRepository.findByProductIdAndIsActiveTrueOrderByCreatedAtDesc(productId)
                 .stream()
-                .map(QnaResponseDto::from)
+                .map(qna -> QnaResponseDto.from(qna, canViewSecret(qna)))
                 .collect(Collectors.toList());
     }
 
-    // Q&A 단건 조회
+    // Q&A 단건 조회 — 비밀글이면 작성자 본인/관리자가 아닐 때 content/answer를 가림
     public QnaResponseDto getQna(Long qnaId) {
         Qna qna = qnaRepository.findById(qnaId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Q&A입니다."));
-        return QnaResponseDto.from(qna);
+        return QnaResponseDto.from(qna, canViewSecret(qna));
     }
 
     // 질문 등록 (일반회원)

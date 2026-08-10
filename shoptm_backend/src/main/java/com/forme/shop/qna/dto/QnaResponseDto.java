@@ -25,8 +25,18 @@ public class QnaResponseDto {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 
-    // Qna 엔티티를 QnaResponseDto로 변환하는 정적 메서드
+    // Qna 엔티티를 QnaResponseDto로 변환하는 정적 메서드 (내용을 가리지 않고 그대로 노출)
+    // 작성자 본인이 방금 쓰거나 수정한 직후, 혹은 관리자 전용 경로처럼 호출한 쪽이 이미
+    // 소유자/관리자임이 확인된 경우에만 사용해야 함 — 그 외 목록/단건 조회는 아래
+    // from(qna, canViewSecret) 오버로드로 비밀글 내용을 가려야 함
     public static QnaResponseDto from(Qna qna) {
+        return from(qna, true);
+    }
+
+    // canViewSecret=false면, 비밀글(isSecret=true)의 content/answer는 null로 가려서 내려준다.
+    // (title/isSecret/작성자 등 목록에 필요한 메타 정보는 그대로 노출 — 잠금 아이콘 표시용)
+    public static QnaResponseDto from(Qna qna, boolean canViewSecret) {
+        boolean hide = Boolean.TRUE.equals(qna.getIsSecret()) && !canViewSecret;
         return QnaResponseDto.builder()
                 .id(qna.getId())
                 .memberId(qna.getMember().getId())
@@ -35,8 +45,8 @@ public class QnaResponseDto {
                 .productId(qna.getProduct() != null ? qna.getProduct().getId() : null)
                 .productName(qna.getProduct() != null ? qna.getProduct().getName() : null)
                 .title(qna.getTitle())
-                .content(qna.getContent())
-                .answer(qna.getAnswer())
+                .content(hide ? null : qna.getContent())
+                .answer(hide ? null : qna.getAnswer())
                 .isSecret(qna.getIsSecret())
                 .isAnswered(qna.getAnswer() != null)  // 답변 있으면 true
                 .answeredAt(qna.getAnsweredAt())
