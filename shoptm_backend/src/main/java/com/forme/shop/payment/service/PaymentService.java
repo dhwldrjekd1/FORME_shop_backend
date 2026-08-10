@@ -67,13 +67,38 @@ public class PaymentService {
         }
     }
 
-    // 결제 승인 기록이 있고 아직 어떤 주문에도 연결되지 않은 "CONFIRMED" 상태일 때만 반환
-    public Optional<Payment> findConfirmed(String paymentKey) {
-        return paymentRepository.findByPaymentKey(paymentKey)
-                .filter(p -> "CONFIRMED".equals(p.getStatus()));
+    // 이 결제를 "지금 이 요청이" 주문 생성에 쓰겠다고 선점한다. 같은 paymentKey로 동시에
+    // 들어온 다른 요청(더블클릭, 네트워크 재시도)은 선점에 실패해 false를 받는다 — 그게 바로
+    // 하나의 결제로 주문이 두 번 만들어지는 것을 막는 지점(멱등성의 핵심).
+    // REQUIRES_NEW로 즉시 커밋시켜 이 행의 락을 바로 풀어준다 — 그렇지 않으면, 이 선점을
+    // 호출한 주문 생성이 나중에 실패해 refundAndMarkFailed(마찬가지로 REQUIRES_NEW)를 부를 때
+    // 같은 행에 대한 락을 서로 기다리며 스스로 교착 상태에 빠질 수 있다.
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean claimForOrderCreation(String paymentKey) {
+        return paymentRepository.claimIfConfirmed(paymentKey) > 0;
     }
 
-    // 주문 생성 성공 시 결제 기록을 해당 주문에 연결
+    // 선점에 성공한 직후 그 결제 기록을 조회 (선점 UPDATE는 벌크 연산이라 영속성 컨텍스트가
+    // 비워지므로, DB에서 다시 읽어야 방금 바뀐 status="PROCESSING"과 실제 승인 금액을 얻을 수 있음)
+    public Payment getByPaymentKey(String paymentKey) {
+        return paymentRepository.findByPaymentKey(paymentKey)
+                .orElseThrow(() -> new IllegalStateException("결제 승인 기록을 찾을 수 없습니다: " + paymentKey));
+    }
+
+    // 선점에 실패했을 때, 이미 이 결제로 주문이 만들어져 있다면(재시도/더블클릭) 그 주문을 그대로
+    // 돌려주기 위해 조회한다 — 새 주문을 또 만드는 대신 원래 요청의 결과를 그대로 재현하는 것
+    public Optional<Orders> findLinkedOrder(String paymentKey) {
+        return paymentRepository.findByPaymentKey(paymentKey)
+                .filter(p -> "LINKED".equals(p.getStatus()))
+                .map(Payment::getOrders);
+    }
+
+    // 주문 생성 성공 시 결제 기록을 해당 주문에 연결.
+    // REQUIRES_NEW로 분리할 수 없음(claimForOrderCreation/refundAndMarkFailed와 달리) —
+    // 아직 커밋 전인 주문을 참조하는 FK 쓰기라서, 별도 트랜잭션에서는 그 주문 행이 안 보여
+    // FK 제약 위반으로 실패한다(실제로 시도해보고 확인함). 그래서 주문을 만든 바깥 트랜잭션에
+    // 그대로 합류(REQUIRED)해야 하며, 커밋 시점 실패로부터의 완전한 격리는 포기하는 대신
+    // OrderService의 try/catch로 최소한 예외가 새는 것만 막는다.
     @Transactional
     public void markLinked(String paymentKey, Orders orders) {
         paymentRepository.findByPaymentKey(paymentKey).ifPresent(payment -> {

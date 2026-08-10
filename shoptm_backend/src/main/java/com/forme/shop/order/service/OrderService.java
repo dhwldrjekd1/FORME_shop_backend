@@ -46,16 +46,32 @@ public class OrderService {
         // 본인(또는 관리자)만 자신의 이름으로 주문 생성 가능
         SecurityUtil.checkOwnerOrAdmin(member.getEmail());
 
-        // 토스 결제를 거쳐 들어온 주문인지 (승인 기록이 실제로 존재하는 경우만) — 있으면
-        // 아래에서 주문 생성이 실패했을 때 이미 승인된 결제를 자동으로 취소(환불)한다.
-        String paymentKey = dto.getPaymentKey();
-        Optional<Payment> confirmedPayment = paymentKey != null
-                ? paymentService.findConfirmed(paymentKey) : Optional.empty();
-        boolean paymentConfirmed = confirmedPayment.isPresent();
+        // 토스 결제를 거쳐 들어온 주문이면, 이 결제를 "지금 이 요청이" 쓰겠다고 먼저 선점한다.
+        // 같은 paymentKey로 거의 동시에 두 번째 요청이 들어오면(더블클릭, 느린 응답 후 재시도)
+        // 선점에 실패하므로, 하나의 결제로 주문이 두 번 만들어지는 것을 여기서 원천 차단한다.
+        // 빈 문자열도 "결제 없음"과 동일하게 취급 (null과 구분해서 다르게 처리할 이유가 없음)
+        String paymentKey = (dto.getPaymentKey() != null && !dto.getPaymentKey().isBlank())
+                ? dto.getPaymentKey() : null;
+        Payment claimedPayment = null;
+        if (paymentKey != null) {
+            if (paymentService.claimForOrderCreation(paymentKey)) {
+                claimedPayment = paymentService.getByPaymentKey(paymentKey);
+            } else {
+                // 선점 실패 — 이미 이 결제로 주문이 만들어져 있다면(재시도) 새로 만들지 않고
+                // 원래 만들어진 주문을 그대로 돌려준다(진짜 멱등성). 아직 처리 중이거나
+                // 이미 취소된 결제라면 명확한 안내와 함께 거부한다.
+                Optional<Orders> existing = paymentService.findLinkedOrder(paymentKey);
+                if (existing.isPresent() && existing.get().getMember().getId().equals(memberId)) {
+                    return OrderResponseDto.from(existing.get());
+                }
+                throw new IllegalArgumentException("이미 처리 중이거나 완료·취소된 결제입니다. 잠시 후 다시 확인해주세요.");
+            }
+        }
+        boolean paymentConfirmed = claimedPayment != null;
         // 결제 금액 검증은 클라이언트가 요청 본문에 실어 보낸 paidAmount가 아니라,
         // 결제 승인 시점에 서버가 이미 저장해 둔 진짜 승인 금액(Payment.amount)을 기준으로 한다.
         // (그렇지 않으면 실제로는 소액만 결제한 뒤 paidAmount만 크게 조작해 보내는 위변조가 가능함)
-        Integer paidAmount = paymentConfirmed ? confirmedPayment.get().getAmount() : dto.getPaidAmount();
+        Integer paidAmount = paymentConfirmed ? claimedPayment.getAmount() : dto.getPaidAmount();
 
         Orders savedOrders;
         try {
@@ -121,18 +137,27 @@ public class OrderService {
                 orders.setPaidAt(LocalDateTime.now());
             }
 
-            savedOrders = orderRepository.save(orders);
+            // saveAndFlush로 즉시 INSERT를 실행해, DB 제약 위반 등의 실패가 트랜잭션 커밋
+            // 시점까지 지연되지 않고 바로 이 try 블록 안에서(환불 로직이 잡을 수 있게) 드러나게 함
+            savedOrders = orderRepository.saveAndFlush(orders);
         } catch (RuntimeException e) {
             // 이미 결제가 승인된 뒤였다면(재고 부족 등 어떤 이유로든) 주문을 만들지 못한 채
             // 카드만 결제된 상태로 남지 않도록 여기서 즉시 자동 환불한다.
             if (paymentConfirmed) {
-                boolean refunded = paymentService.refundAndMarkFailed(paymentKey, e.getMessage());
-                // 우리가 직접 던진, 사용자에게 보여줘도 안전한 메시지만 그대로 노출하고
-                // 예기치 못한 내부 예외(NPE, DB 오류 등)의 원문 메시지는 클라이언트에 흘리지 않는다.
                 if (!(e instanceof IllegalArgumentException)) {
                     log.error("주문 생성 중 예기치 못한 오류 (paymentKey={})", paymentKey, e);
                 }
                 String detail = (e instanceof IllegalArgumentException) ? e.getMessage() : "일시적인 오류가 발생했습니다.";
+                // refundAndMarkFailed 자체가 (아주 드물게, 예를 들어 그 트랜잭션의 커밋이 실패하는 등)
+                // 또 예외를 던지더라도, 사용자에게는 최소한 "환불도 실패했으니 문의하라"는 안전한
+                // 메시지가 반드시 나가야 한다 — 이 지점에서 원본 예외가 그대로 새어나가면 안 됨.
+                boolean refunded;
+                try {
+                    refunded = paymentService.refundAndMarkFailed(paymentKey, e.getMessage());
+                } catch (Exception refundError) {
+                    log.error("환불 처리 자체가 실패함 (paymentKey={})", paymentKey, refundError);
+                    refunded = false;
+                }
                 throw new IllegalArgumentException(refunded
                         ? "주문 처리 중 오류가 발생해 결제가 자동으로 취소되었습니다. (" + detail + ")"
                         : "주문 처리 중 오류가 발생했고 결제 자동 취소에도 실패했습니다. 고객센터로 문의해주세요. (" + detail + ")");
