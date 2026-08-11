@@ -3,6 +3,7 @@ package com.forme.shop.member.repository;
 import com.forme.shop.member.entity.Member;  // 반드시 우리 Member 클래스 import
 import org.springframework.data.jpa.repository.JpaRepository;
 
+import java.util.List;
 import java.util.Optional;
 
 // JpaRepository 상속만 해도 기본 CRUD 자동 제공
@@ -19,4 +20,8 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     // 회원가입 시 이메일 중복 여부 확인
     // true = 이미 존재 / false = 사용 가능
     boolean existsByEmail(String email);
+
+    // 정지/탈퇴된 회원 목록 — 서버 기동 시 TokenBlacklistInitializer가 이걸 읽어
+    // 메모리 블랙리스트를 복원하는 데 사용 (재배포로 밴 기록이 풀리는 것 방지)
+    List<Member> findByIsActiveFalseAndDeactivatedAtIsNotNull();
 }

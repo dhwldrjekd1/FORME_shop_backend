@@ -12,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -137,6 +138,10 @@ public class MemberService {
         SecurityUtil.checkOwnerOrAdmin(member.getEmail());
 
         member.setIsActive(false);  // 비활성화 처리
+        member.setDeactivatedAt(LocalDateTime.now());
+        // 이미 발급된 토큰이 남아있으면(다른 기기 로그인 등) 탈퇴 후에도 만료 전까지
+        // 계속 인증되던 문제 — 이 회원의 모든 토큰을 즉시 무효화
+        tokenBlacklistService.revokeAllForEmail(member.getEmail());
     }
 
     // 로그아웃 — 지금 쓰던 토큰의 jti를 블랙리스트에 등록해서 만료 전이라도 즉시 무효화
@@ -162,6 +167,10 @@ public class MemberService {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
         member.setIsActive(false);  // 비활성화 처리
+        member.setDeactivatedAt(LocalDateTime.now());
+        // 강퇴는 특히 "지금 당장 접근을 끊어야 하는" 상황이므로, 남은 세션이
+        // 토큰 만료 시각(최대 24시간)까지 계속 유효하게 남아있으면 안 됨
+        tokenBlacklistService.revokeAllForEmail(member.getEmail());
     }
 
     // 관리자 - 회원 등급 변경 (BRONZE / SILVER / GOLD)

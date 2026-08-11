@@ -31,11 +31,18 @@ public class JwtFilter extends OncePerRequestFilter {
         // Authorization 헤더 또는 httpOnly 쿠키(auth_token)에서 토큰 추출
         String token = SecurityUtil.extractToken(request);
 
-        if (token != null) {
-            // 서명·만료는 유효하더라도, 로그아웃 등으로 폐기된(jti가 블랙리스트에 있는) 토큰이면 인증 처리하지 않음
-            if (jwtUtil.validateToken(token) && !tokenBlacklistService.isRevoked(jwtUtil.getJti(token))) {
-                String email = jwtUtil.getEmail(token);  // 토큰에서 이메일 추출
-                String role  = jwtUtil.getRole(token);   // 토큰에서 권한 추출
+        if (token != null && jwtUtil.validateToken(token)) {
+            String email = jwtUtil.getEmail(token);  // 토큰에서 이메일 추출
+
+            // 서명·만료는 유효하더라도 인증 처리하지 않는 두 경우:
+            // ① 로그아웃 등으로 이 토큰(jti)만 콕 집어 폐기된 경우
+            // ② 이 토큰을 가진 회원이 그 뒤에 정지/탈퇴돼서, 발급 시각이 그 회원의
+            //    전체 무효화 기준 시각보다 이전인 경우 (관리자가 강퇴해도 최대 24시간
+            //    동안 계속 로그인 상태로 남아있던 문제의 수정)
+            boolean valid = !tokenBlacklistService.isRevoked(jwtUtil.getJti(token))
+                    && !tokenBlacklistService.isRevokedForEmail(email, jwtUtil.getIssuedAt(token).toInstant());
+            if (valid) {
+                String role = jwtUtil.getRole(token);   // 토큰에서 권한 추출
 
                 // Spring Security에 인증 정보 등록
                 UsernamePasswordAuthenticationToken auth =

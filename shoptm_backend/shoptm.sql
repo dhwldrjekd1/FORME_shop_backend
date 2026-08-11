@@ -271,7 +271,8 @@ CREATE TABLE public.member (
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
     fit character varying(20),
     height double precision,
-    weight double precision
+    weight double precision,
+    deactivated_at timestamp without time zone
 );
 
 

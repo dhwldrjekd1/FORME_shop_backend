@@ -71,6 +71,13 @@ public class Member {
     // false = 탈퇴 or 강퇴된 회원 (소프트 삭제)
     // 로그인 시 isActive = false 이면 로그인 거부
 
+    @Column
+    private LocalDateTime deactivatedAt;
+    // 탈퇴/강퇴 처리된 시각 (활성 회원은 NULL). 이 시각 이전에 발급된 JWT는 전부 무효로 취급해서
+    // 정지/탈퇴 후에도 만료 전까지 로그인 상태가 유지되던 문제를 막는 기준값으로 씀
+    // (TokenBlacklistService — 서버가 재시작돼도 이 값은 DB에 남아있어야 하므로 updatedAt처럼
+    // 다른 이유로도 계속 갱신되는 컬럼이 아니라 별도 컬럼으로 둠)
+
     @CreationTimestamp                           // INSERT 시 자동으로 현재 시간 저장
     @Column(nullable = false, updatable = false) // 최초 저장 후 수정 불가
     private LocalDateTime createdAt;

@@ -61,6 +61,12 @@ public class JwtUtil {
         return getClaims(token).getExpiration();
     }
 
+    // 토큰 발급 시각 추출 — 정지/탈퇴로 그 회원의 모든 토큰을 한꺼번에 무효화할 때,
+    // "그 시점 이전에 발급된 토큰인지" 판단하는 기준으로 씀 (TokenBlacklistService)
+    public Date getIssuedAt(String token) {
+        return getClaims(token).getIssuedAt();
+    }
+
     // 로그인 성공 시 내려줄 쿠키 생성
     // httpOnly: 자바스크립트가 못 읽음 (XSS로 토큰 탈취 방지)
     // secure: HTTPS에서만 전송 (forme.dyy.kr은 Caddy가 TLS 종료 후 프록시하므로 항상 해당)
