@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -263,18 +264,39 @@ public class OrderService {
         // 본인(또는 관리자) 소유의 주문만 취소 가능
         SecurityUtil.checkOwnerOrAdmin(orders.getMember().getEmail());
 
-        // PAID 상태가 아니면 취소 불가
-        if (!orders.getStatus().equals("PAID")) {
+        // PAID 상태가 아니면 취소 불가 (화면에 보여줄 안내용 사전 확인 — 실제로 "딱 한 번만
+        // 취소되게" 보장하는 지점은 아래 cancelIfPaid의 WHERE절. 이 확인만 믿으면, 같은
+        // 주문에 대한 취소 요청이 동시에 두 번 들어왔을 때 둘 다 통과해 재고를 두 번
+        // 복구할 수 있음)
+        if (!"PAID".equals(orders.getStatus())) {
             throw new IllegalArgumentException("취소할 수 없는 주문입니다.");
         }
 
-        // 재고 복구
-        for (OrderItem item : orders.getOrderItems()) {
-            item.getProduct().setStock(
-                    item.getProduct().getStock() + item.getQuantity());
+        List<OrderItem> items = new ArrayList<>(orders.getOrderItems());
+
+        int updated = orderRepository.cancelIfPaid(orderId);
+        if (updated == 0) {
+            // 그 사이 다른 요청이 먼저 취소를 처리한 것 — 중복 복구하지 않고 그대로 종료
+            throw new IllegalArgumentException("취소할 수 없는 주문입니다.");
         }
 
-        orders.setStatus("CANCELLED");  // 주문 상태 취소로 변경
+        restoreStock(orderId, items);
+    }
+
+    // 취소된 주문의 상품별 재고를 원자적으로 복구한다. 조회 후 다시 쓰는 방식이면 같은
+    // 상품이 포함된 두 주문이 동시에 취소될 때 한쪽 복구분이 유실될 수 있어(재고 차감
+    // 오버셀 방지와 동일한 이유) increaseStock(원자적 UPDATE)으로 처리한다.
+    private void restoreStock(Long orderId, List<OrderItem> items) {
+        for (OrderItem item : items) {
+            int affected = productRepository.increaseStock(item.getProduct().getId(), item.getQuantity());
+            if (affected == 0) {
+                // 복구 대상 상품을 못 찾은 경우(현재는 상품을 하드 삭제하지 않아 일어날 수
+                // 없지만) 일부 상품만 복구되고 주문은 취소된 채로 남는 반쪽짜리 상태를
+                // 만들지 않기 위해, 조용히 넘어가지 않고 던져서 취소 자체를 롤백시킨다.
+                throw new IllegalStateException(
+                        "재고 복구 대상 상품을 찾지 못했습니다 (orderId=" + orderId + ", productId=" + item.getProduct().getId() + ")");
+            }
+        }
     }
 
     // 관리자 - 전체 주문 목록 조회
@@ -298,17 +320,30 @@ public class OrderService {
         Orders orders = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
 
-        // 재고는 주문 생성 시점에 이미 차감돼 있으므로, 취소가 아니던 주문이 취소로
-        // 바뀔 때는(회원 본인 취소 cancelOrder()와 동일하게) 재고를 복구해야 함.
-        // 이미 취소된 주문을 다시 취소 처리해도 중복 복구되지 않도록 이전 상태를 확인.
-        if ("CANCELLED".equals(dto.getStatus()) && !"CANCELLED".equals(orders.getStatus())) {
-            for (OrderItem item : orders.getOrderItems()) {
-                item.getProduct().setStock(
-                        item.getProduct().getStock() + item.getQuantity());
+        if ("CANCELLED".equals(dto.getStatus())) {
+            // 재고는 주문 생성 시점에 이미 차감돼 있으므로, 취소가 아니던 주문이 취소로
+            // 바뀔 때(회원 본인 취소 cancelOrder()와 동일하게) 재고를 복구해야 함.
+            // CANCELLED로의 전이 자체를 원자적 조건부 UPDATE로 처리해서, 같은 주문에 대한
+            // 상태변경 요청이 동시에 여러 번 들어와도(관리자 이중클릭, 회원 취소와 겹침 등)
+            // 실제로 전이시킨 단 하나의 요청만 재고를 복구하도록 한다.
+            List<OrderItem> items = new ArrayList<>(orders.getOrderItems());
+            int updated = orderRepository.cancelIfNotCancelled(orderId);
+            if (updated > 0) {
+                restoreStock(orderId, items);
             }
+        } else {
+            // 이 전이도 CANCELLED가 아닌 주문에서만 원자적으로 적용한다 — 그렇지 않으면
+            // 회원이 막 취소해서 재고까지 복구된 주문을, 관리자의 다른 상태변경 요청이
+            // 거의 동시에 덮어써서 "재고는 복구됐는데 주문은 취소 아님"으로 남을 수 있다.
+            orderRepository.updateStatusIfNotCancelled(orderId, dto.getStatus());
         }
 
-        orders.setStatus(dto.getStatus());  // 상태 변경 (더티 체킹으로 자동 저장)
-        return OrderResponseDto.from(orders);
+        // 위에서 원자적 UPDATE를 거쳤을 수 있어(영속성 컨텍스트가 비워짐) 최신 상태를
+        // 다시 조회해서 응답한다 — 응답 조립을 "컨텍스트가 비워지기 전"에 해둬야 하는
+        // 순서 의존적인 코드로 만들지 않기 위한 것 (실제로 그 순서를 놓쳐서
+        // LazyInitializationException이 나는 걸 겪은 뒤 이 방식으로 정리함).
+        Orders fresh = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+        return OrderResponseDto.from(fresh);
     }
 }

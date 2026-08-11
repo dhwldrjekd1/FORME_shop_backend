@@ -18,6 +18,16 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("UPDATE Product p SET p.stock = p.stock - :quantity WHERE p.id = :productId AND p.stock >= :quantity")
     int decreaseStockIfAvailable(@Param("productId") Long productId, @Param("quantity") Integer quantity);
 
+    // 주문 취소 시 재고 복구 — 위와 같은 이유로 원자적 UPDATE로 처리한다.
+    // (조회 후 다시 쓰는 방식이면, 같은 상품이 포함된 두 주문이 동시에 취소될 때 한쪽의
+    // 복구분이 다른 쪽에 덮어써져 유실될 수 있음 — 오버셀 방지 원자적 UPDATE 도입 이후에도
+    // 취소 경로에는 이 처리가 빠져 있던 것을 뒤늦게 발견해 추가함)
+    // decreaseStockIfAvailable과 동일하게 영향받은 행 수를 반환 — 0이면(상품이 그 사이
+    // 삭제되는 등) 복구가 조용히 실패한 것이므로 호출 쪽에서 로그를 남길 수 있게 함.
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Product p SET p.stock = p.stock + :quantity WHERE p.id = :productId")
+    int increaseStock(@Param("productId") Long productId, @Param("quantity") Integer quantity);
+
     // SELECT * FROM products WHERE is_active = true
     // 삭제되지 않은 전체 상품 목록 조회
     // category/sizes 는 LAZY 라서 DTO 변환 시 상품마다 추가 쿼리가 나가는 N+1이 발생함
