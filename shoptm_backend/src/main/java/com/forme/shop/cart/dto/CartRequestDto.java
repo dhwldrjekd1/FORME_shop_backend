@@ -1,5 +1,6 @@
 package com.forme.shop.cart.dto;
 
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
@@ -17,6 +18,9 @@ public class CartRequestDto {
 
         @NotNull(message = "수량을 입력해주세요.")
         @Min(value = 1, message = "수량은 1개 이상이어야 합니다.")  // 최소 1개
+        // 상한이 없으면 기존 수량과 더한 값이 DB integer 범위를 넘겨 원자적 담기(upsertCart)의
+        // UPDATE 연산 자체가 정수 오버플로 오류로 실패할 수 있어(직접 확인함) 상한을 둠
+        @Max(value = 999, message = "수량은 999개 이하여야 합니다.")
         private Integer quantity;  // 담을 수량
 
         private String size;       // 선택한 사이즈
@@ -28,6 +32,7 @@ public class CartRequestDto {
 
         @NotNull(message = "수량을 입력해주세요.")
         @Min(value = 1, message = "수량은 1개 이상이어야 합니다.")  // 최소 1개
+        @Max(value = 999, message = "수량은 999개 이하여야 합니다.")
         private Integer quantity;  // 변경할 수량
     }
 }

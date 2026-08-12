@@ -11,14 +11,16 @@ import java.time.LocalDateTime;
 /**
  * 장바구니 엔티티
  * - 회원(Member)과 상품(Product)의 중간 테이블
- * - 동일 회원이 동일 상품 중복 담기 방지: UNIQUE(member_id, product_id)
- * - 이미 담긴 상품이면 수량만 추가하는 방식으로 처리
+ * - 동일 회원이 동일 상품+사이즈 중복 담기 방지: UNIQUE(member_id, product_id, size)
+ *   (예전에는 size 없이 (member_id, product_id)만 걸려 있어서, 같은 상품을 다른
+ *   사이즈로 담으면 서로 다른 줄이 아니라 같은 줄로 합쳐지던 버그가 있었음)
+ * - 이미 담긴 상품+사이즈면 수량만 추가하는 방식으로 처리
  * - 테이블명: cart_items
  */
 @Entity
 @Table(name = "cart_items",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"member_id", "product_id"}))
-// 같은 회원이 같은 상품을 중복으로 담지 못하도록 UNIQUE 제약
+        uniqueConstraints = @UniqueConstraint(columnNames = {"member_id", "product_id", "size"}))
+// 같은 회원이 같은 상품+사이즈를 중복으로 담지 못하도록 UNIQUE 제약
 @Getter @Setter
 @NoArgsConstructor
 @AllArgsConstructor

@@ -1330,11 +1330,13 @@ ALTER TABLE ONLY public.boards
 
 
 --
--- Name: cart_items cart_items_member_id_product_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: cart_items cart_items_member_id_product_id_size_key; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- (기존 (member_id, product_id)만 걸려있던 제약을 size까지 포함하도록 넓힘 — 같은 상품을
+-- 다른 사이즈로 담으면 서로 다른 줄이 아니라 같은 줄로 합쳐지던 버그를 막기 위함)
 --
 
 ALTER TABLE ONLY public.cart_items
-    ADD CONSTRAINT cart_items_member_id_product_id_key UNIQUE (member_id, product_id);
+    ADD CONSTRAINT cart_items_member_id_product_id_size_key UNIQUE (member_id, product_id, size);
 
 
 --
@@ -1487,14 +1489,6 @@ ALTER TABLE ONLY public.site_settings
 
 ALTER TABLE ONLY public.reviews
     ADD CONSTRAINT uk4gic5ufv2meksy3fve0ycs691 UNIQUE (member_id, order_id, product_id);
-
-
---
--- Name: cart_items ukl1p51k88sk9mauxatwfjafdee; Type: CONSTRAINT; Schema: public; Owner: postgres
---
-
-ALTER TABLE ONLY public.cart_items
-    ADD CONSTRAINT ukl1p51k88sk9mauxatwfjafdee UNIQUE (member_id, product_id);
 
 
 --
