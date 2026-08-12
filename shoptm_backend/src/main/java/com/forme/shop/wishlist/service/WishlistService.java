@@ -3,10 +3,8 @@ package com.forme.shop.wishlist.service;
 import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
-import com.forme.shop.product.entity.Product;
 import com.forme.shop.product.repository.ProductRepository;
 import com.forme.shop.wishlist.dto.WishlistResponseDto;
-import com.forme.shop.wishlist.entity.Wishlist;
 import com.forme.shop.wishlist.repository.WishlistRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -42,14 +40,17 @@ public class WishlistService {
         // 본인(또는 관리자)의 찜 목록에만 추가 가능
         SecurityUtil.checkOwnerOrAdmin(member.getEmail());
 
-        if (wishlistRepository.existsByMemberIdAndProductId(memberId, productId)) {
-            throw new IllegalArgumentException("이미 찜한 상품입니다.");
+        if (!productRepository.existsById(productId)) {
+            throw new IllegalArgumentException("존재하지 않는 상품입니다.");
         }
-        Product product = productRepository.findById(productId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
-        Wishlist wishlist = Wishlist.builder().member(member).product(product).build();
-        return WishlistResponseDto.from(wishlistRepository.save(wishlist));
+        // 있으면 조용히 무시하고 없으면 새로 담는 원자적 upsert — 동시에 같은 상품을
+        // 두 번 찜해도(하트 연타 등) DB가 하나의 연산으로 처리해 안전함
+        wishlistRepository.upsertWishlist(memberId, productId);
+
+        return wishlistRepository.findByMemberIdAndProductId(memberId, productId)
+                .map(WishlistResponseDto::from)
+                .orElseThrow(() -> new IllegalStateException("찜 항목을 찾을 수 없습니다."));
     }
 
     @Transactional
