@@ -11,15 +11,14 @@ import java.time.LocalDateTime;
 
 /**
  * 리뷰 엔티티
- * - 구매한 내역(order_id)이 있는 경우에만 리뷰 작성 가능
- * - 동일 회원이 동일 주문의 동일 상품에 중복 리뷰 방지
- *   UNIQUE(member_id, order_id, product_id)
+ * - 구매 인증(order_id)은 선택 — 있으면 본인 주문인지 검증 후 연결, 없어도 작성 가능
+ * - 구매 인증 여부와 무관하게 동일 회원이 동일 상품에 중복 리뷰 방지
+ *   UNIQUE(member_id, product_id)
  * - 관리자 소프트 삭제: is_active = false
  * - 테이블명: reviews
  */
 @Entity
 @Table(name = "reviews")
-// 주문 1건당 상품 1개 리뷰 제한
 @Getter @Setter
 @NoArgsConstructor
 @AllArgsConstructor

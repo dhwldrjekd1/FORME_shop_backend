@@ -1484,11 +1484,14 @@ ALTER TABLE ONLY public.site_settings
 
 
 --
--- Name: reviews uk4gic5ufv2meksy3fve0ycs691; Type: CONSTRAINT; Schema: public; Owner: postgres
+-- Name: reviews reviews_member_id_product_id_key; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
+-- 회원당 상품 하나에 리뷰 하나만 허용(구매 인증 여부와 무관). 예전엔 (member_id, order_id,
+-- product_id)였는데, order_id가 NULL인 리뷰끼리는 NULL을 서로 다른 값으로 취급해 걸러지지
+-- 않아 구매 인증 없이 작성한 리뷰는 같은 회원이 같은 상품에 무제한으로 남길 수 있었음.
 
 ALTER TABLE ONLY public.reviews
-    ADD CONSTRAINT uk4gic5ufv2meksy3fve0ycs691 UNIQUE (member_id, order_id, product_id);
+    ADD CONSTRAINT reviews_member_id_product_id_key UNIQUE (member_id, product_id);
 
 
 --

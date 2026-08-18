@@ -3,7 +3,11 @@ package com.forme.shop.review.repository;
 import com.forme.shop.review.entity.Review;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import java.util.List;
+import java.util.Optional;
 
 public interface ReviewRepository extends JpaRepository<Review, Long> {
 
@@ -23,7 +27,20 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     @EntityGraph(attributePaths = {"member", "product"})
     List<Review> findAllByOrderByCreatedAtDesc();
 
-    // SELECT COUNT(*) > 0 FROM reviews WHERE member_id = ? AND order_id = ? AND product_id = ?
-    // 이미 리뷰를 작성했는지 확인 (중복 방지)
-    boolean existsByMemberIdAndOrdersIdAndProductId(Long memberId, Long ordersId, Long productId);
+    // createReview()가 원자적 삽입 직후 응답 조립에 쓰는 단건 조회라 위와 같은 이유로 EntityGraph 필요
+    @EntityGraph(attributePaths = {"member", "product"})
+    Optional<Review> findByMemberIdAndProductId(Long memberId, Long productId);
+
+    // 이미 리뷰가 있으면 삽입하지 않는(DO NOTHING) 원자적 삽입. "확인 후 insert" 방식은 두 요청이
+    // 동시에 들어오면(연속 클릭 등) 둘 다 "아직 없음"으로 보고 둘 다 insert를 시도해 DB 제약
+    // 위반으로 500이 날 수 있었음(장바구니/찜과 같은 이유). 반환값(영향받은 행 수)이 0이면
+    // 이미 리뷰가 있었다는 뜻이므로 호출 쪽에서 "이미 리뷰를 작성했습니다" 에러로 안내한다.
+    @Modifying(clearAutomatically = true)
+    @Query(value = "INSERT INTO reviews (member_id, product_id, order_id, rating, content, is_active, created_at, updated_at) " +
+            "VALUES (:memberId, :productId, :orderId, :rating, :content, true, now(), now()) " +
+            "ON CONFLICT (member_id, product_id) DO NOTHING",
+            nativeQuery = true)
+    int insertReviewIfAbsent(@Param("memberId") Long memberId, @Param("productId") Long productId,
+                              @Param("orderId") Long orderId, @Param("rating") Integer rating,
+                              @Param("content") String content);
 }

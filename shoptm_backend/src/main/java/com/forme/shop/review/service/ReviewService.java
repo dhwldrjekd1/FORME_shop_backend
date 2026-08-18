@@ -5,7 +5,6 @@ import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.order.entity.Orders;
 import com.forme.shop.order.repository.OrderRepository;
-import com.forme.shop.product.entity.Product;
 import com.forme.shop.product.repository.ProductRepository;
 import com.forme.shop.review.dto.ReviewRequestDto;
 import com.forme.shop.review.dto.ReviewResponseDto;
@@ -45,7 +44,8 @@ public class ReviewService {
     }
 
     // 리뷰 작성 (일반회원)
-    // 구매한 상품에 대해서만 작성 가능, 중복 작성 불가
+    // 구매 인증(orderId)은 선택 — 있으면 본인 주문인지 검증 후 연결, 없어도 작성 가능.
+    // 다만 구매 인증 여부와 무관하게 회원당 상품 하나에 리뷰 하나만 작성 가능(중복 방지)
     @Transactional
     public ReviewResponseDto createReview(Long memberId, ReviewRequestDto.Create dto) {
 
@@ -55,13 +55,13 @@ public class ReviewService {
         // 본인(또는 관리자) 명의로만 리뷰 작성 가능
         SecurityUtil.checkOwnerOrAdmin(member.getEmail());
 
-        Product product = productRepository.findById(dto.getProductId())
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
+        if (!productRepository.existsById(dto.getProductId())) {
+            throw new IllegalArgumentException("존재하지 않는 상품입니다.");
+        }
 
-        // 주문 확인 (선택 — orderId가 null이면 주문 없이 리뷰 가능)
-        Orders orders = null;
+        // 주문 확인 (선택 — orderId가 null이면 "구매 인증" 배지 없이 리뷰 가능)
         if (dto.getOrderId() != null) {
-            orders = orderRepository.findById(dto.getOrderId())
+            Orders orders = orderRepository.findById(dto.getOrderId())
                     .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
 
             // 구매확인(orders 연결)은 실제로 본인이 그 상품을 주문했을 때만 성립해야 하므로,
@@ -74,23 +74,22 @@ public class ReviewService {
             if (!containsProduct) {
                 throw new IllegalArgumentException("해당 주문에 포함되지 않은 상품입니다.");
             }
-
-            // 중복 리뷰 방지 (주문이 있는 경우만)
-            if (reviewRepository.existsByMemberIdAndOrdersIdAndProductId(
-                    memberId, dto.getOrderId(), dto.getProductId())) {
-                throw new IllegalArgumentException("이미 리뷰를 작성했습니다.");
-            }
         }
 
-        Review review = Review.builder()
-                .member(member)
-                .product(product)
-                .orders(orders)
-                .rating(dto.getRating())
-                .content(dto.getContent())
-                .build();
+        // 이미 리뷰가 있으면 삽입하지 않는 원자적 삽입(DB UNIQUE(member_id, product_id) 제약 기반).
+        // "확인 후 insert" 방식은 두 요청이 동시에 들어오면(연속 클릭 등) 둘 다 "아직 없음"으로 보고
+        // 둘 다 insert를 시도해 DB 제약 위반으로 500이 나거나(장바구니/찜과 같은 이유), orderId가
+        // 없는 리뷰끼리는 예전 제약(member_id, order_id, product_id)로도 NULL이 걸러지지 않아
+        // 무제한 작성이 가능했음 — 원자적 삽입 하나로 두 문제를 함께 막는다.
+        int inserted = reviewRepository.insertReviewIfAbsent(
+                memberId, dto.getProductId(), dto.getOrderId(), dto.getRating(), dto.getContent());
+        if (inserted == 0) {
+            throw new IllegalArgumentException("이미 리뷰를 작성했습니다.");
+        }
 
-        return ReviewResponseDto.from(reviewRepository.save(review));
+        return reviewRepository.findByMemberIdAndProductId(memberId, dto.getProductId())
+                .map(ReviewResponseDto::from)
+                .orElseThrow(() -> new IllegalStateException("리뷰를 찾을 수 없습니다."));
     }
 
     // 리뷰 수정 (일반회원)
