@@ -1529,9 +1529,15 @@ ALTER TABLE ONLY public.cart_items
 --
 -- Name: cart_items cart_items_product_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: postgres
 --
+-- ON UPDATE CASCADE는 아래 이 파일의 product_id FK 6개(cart_items/product_sizes/wishlists/
+-- order_items/qna/reviews) 모두에 붙어있음 — ProductService.changeProductId()(관리자 상품 ID
+-- 변경)가 products.id 하나만 UPDATE해도 이걸 참조하는 모든 테이블이 자동으로 같이 바뀌게
+-- 하기 위함. CASCADE가 없으면 자식 테이블을 먼저 새 id로 옮기려 해도 부모 행이 아직 그
+-- id로 존재하지 않아 실패하고, 부모를 먼저 바꾸면 자식이 참조하던 옛 id가 사라져 실패하는
+-- 순서 문제가 생겨 애플리케이션에서 안전하게 옮길 방법이 없었음.
 
 ALTER TABLE ONLY public.cart_items
-    ADD CONSTRAINT cart_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+    ADD CONSTRAINT cart_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE ON UPDATE CASCADE;
 
 
 --
@@ -1563,7 +1569,7 @@ ALTER TABLE ONLY public.deliveries
 --
 
 ALTER TABLE ONLY public.product_sizes
-    ADD CONSTRAINT fk4isa0j51hpdn7cx04m831jic4 FOREIGN KEY (product_id) REFERENCES public.products(id);
+    ADD CONSTRAINT fk4isa0j51hpdn7cx04m831jic4 FOREIGN KEY (product_id) REFERENCES public.products(id) ON UPDATE CASCADE;
 
 
 --
@@ -1579,7 +1585,7 @@ ALTER TABLE ONLY public.wishlists
 --
 
 ALTER TABLE ONLY public.wishlists
-    ADD CONSTRAINT fkl7ao98u2bm8nijc1rv4jobcrx FOREIGN KEY (product_id) REFERENCES public.products(id);
+    ADD CONSTRAINT fkl7ao98u2bm8nijc1rv4jobcrx FOREIGN KEY (product_id) REFERENCES public.products(id) ON UPDATE CASCADE;
 
 
 --
@@ -1595,7 +1601,7 @@ ALTER TABLE ONLY public.order_items
 --
 
 ALTER TABLE ONLY public.order_items
-    ADD CONSTRAINT order_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id);
+    ADD CONSTRAINT order_items_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON UPDATE CASCADE;
 
 
 --
@@ -1643,7 +1649,7 @@ ALTER TABLE ONLY public.qna
 --
 
 ALTER TABLE ONLY public.qna
-    ADD CONSTRAINT qna_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE SET NULL;
+    ADD CONSTRAINT qna_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE SET NULL ON UPDATE CASCADE;
 
 
 --
@@ -1667,7 +1673,7 @@ ALTER TABLE ONLY public.reviews
 --
 
 ALTER TABLE ONLY public.reviews
-    ADD CONSTRAINT reviews_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE;
+    ADD CONSTRAINT reviews_product_id_fkey FOREIGN KEY (product_id) REFERENCES public.products(id) ON DELETE CASCADE ON UPDATE CASCADE;
 
 
 --

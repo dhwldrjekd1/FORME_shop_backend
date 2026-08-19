@@ -324,9 +324,11 @@ public class ProductService {
         if (productRepository.existsById(newId)) throw new IllegalArgumentException("이미 존재하는 ID입니다: " + newId);
         if (!productRepository.existsById(oldId)) throw new IllegalArgumentException("존재하지 않는 상품입니다: " + oldId);
 
-        // 외래키 제약조건 때문에 순서 중요: sizes → products
-        entityManager.createNativeQuery("UPDATE product_sizes SET product_id = :newId WHERE product_id = :oldId")
-                .setParameter("newId", newId).setParameter("oldId", oldId).executeUpdate();
+        // products.id를 참조하는 모든 테이블(cart_items/product_sizes/wishlists/order_items/
+        // qna/reviews) FK에 ON UPDATE CASCADE를 걸어뒀으므로(shoptm.sql 참고), products.id 하나만
+        // 바꾸면 나머지는 DB가 알아서 같이 옮겨준다. 예전엔 product_sizes만 애플리케이션에서 직접
+        // 옮기고 나머지는 빠뜨려서, 이 상품이 한 번이라도 주문/찜/문의/리뷰된 적이 있으면(=실사용
+        // 상품 대부분) FK 위반으로 항상 실패했다.
         entityManager.createNativeQuery("UPDATE products SET id = :newId WHERE id = :oldId")
                 .setParameter("newId", newId).setParameter("oldId", oldId).executeUpdate();
         entityManager.createNativeQuery("SELECT setval('products_id_seq', (SELECT COALESCE(MAX(id), 1) FROM products))")
