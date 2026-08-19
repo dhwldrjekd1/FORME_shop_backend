@@ -239,6 +239,12 @@ src/main/java/com/forme/shop/
 - **해결**: `product_id`를 참조하는 FK 6개(product_sizes 포함) 전부에 `ON UPDATE CASCADE`를 추가. 이제 `products.id` 하나만 바꾸면 이를 참조하는 모든 테이블이 같은 문장 안에서 DB가 알아서 같이 옮겨줘서, 애플리케이션은 `UPDATE products SET id = 새id` 한 줄이면 충분해짐(오히려 코드가 더 단순해짐).
 - **범위에서 제외한 것**: `page_views.page_path`(예: `/products/407`)처럼 상품 id가 URL 문자열 안에 박혀있는 분석 로그는 FK가 아니라서 캐스케이드 대상이 아니고, 일부러 손대지 않음 — 이건 "그 시점에 실제로 방문됐던 URL"을 기록하는 이력 데이터라, 나중에 id가 바뀌었다고 과거 로그를 새 id로 고쳐 쓰면 오히려 실제로 없었던 방문 기록을 조작하는 셈이 되어 더 잘못된 방향이라고 판단함.
 - **검증**: `ddl-auto: validate` 환경이라 FK 6개 모두 실제 운영 DB에 직접 `ALTER TABLE`로 반영. 임시 포트(8399)에 별도 기동해 실제 관리자 계정으로, 리뷰가 하나 달려있는 실제 상품 id를 변경(407→900) → 이전엔 즉시 실패하던 케이스가 200으로 성공하고, 리뷰의 `product_id`도 자동으로 900으로 바뀐 것을 DB에서 직접 확인. 같은 방식으로 900→407로 되돌려 원래 상태로 정리한 뒤 실제 서비스에 배포.
+
+### 게시글 조회수가 응답에는 실제보다 1 적게 표시됨 (2026.08.19)
+- **문제**: `BoardService.getBoard()`가 `Board` 엔티티를 먼저 로드해두고, 그 뒤에 `BoardRepository.incrementViews()`(벌크 `UPDATE`)로 조회수를 올린 뒤, 응답은 처음에 로드해둔 그 엔티티(`board`)로 그대로 조립했음. 벌크 `UPDATE`는 영속성 컨텍스트를 거치지 않고 DB를 직접 갱신하기 때문에, 이미 로드해둔 `board` 인스턴스의 `views` 값은 갱신되지 않은 채 남아있어, 실제 DB에는 조회수가 정확히 올라갔는데도 응답에는 하나 적은 값이 나갔음. 다른 벌크 `UPDATE`(`PaymentRepository`/`CartRepository`/`WishlistRepository`/`ProductRepository`)는 전부 `@Modifying(clearAutomatically = true)`를 쓰는데 이 메서드만 빠져있었음.
+- **해결**: `incrementViews()`에 `clearAutomatically = true` 추가. 다만 이것만 추가하면 컨텍스트가 비워진 뒤 처음 로드해둔 `board`로 응답을 조립할 때 지연 로딩 필드(`board.getMember().getName()`)에서 `LazyInitializationException`이 날 수 있어(이 세션에서 이미 겪었던 것과 같은 패턴), 조회수 증가 이후 반드시 다시 조회한 엔티티로 응답을 조립하도록 `BoardService.getBoard()`도 함께 수정.
+- **교차검증에서 발견해 같이 고친 것**: (1) 재조회 시 게시글이 사라진 경우(증가 직전~직후 사이에 삭제되거나, 작성자 탈퇴로 `ON DELETE CASCADE`에 걸려 함께 삭제되는 극히 드문 경우) `IllegalStateException`을 던지도록 처음 짰는데, 이 예외는 `GlobalExceptionHandler`에 전용 처리기가 없어 500으로 떨어짐 — "존재하지 않는 게시글"과 클라이언트 입장에서 같은 상황이므로 `IllegalArgumentException`(400)으로 통일. (2) 재조회한 엔티티에 대해 삭제 여부(`isActive`)를 다시 확인하지 않아서, 조회수 증가와 재조회 사이에 게시글이 소프트 삭제되면 삭제된 글 내용이 그대로 응답에 나갈 뻔한 것도 함께 막음. (3) 이 과정에서 "존재 확인 + 삭제 여부 확인" 로직이 메서드 안에서 두 번 반복돼, `requireActiveBoard()` private 메서드로 뽑아 정리.
+- **검증**: 임시 포트(8399)에 테스트 게시글을 만들어 연속 3회 조회 → 매번 응답의 `views`가 1, 2, 3으로 실제 값 그대로 나오는 것을 확인(수정 전이었다면 0, 1, 2로 하나씩 밀려 나왔을 상황). 테스트 게시글은 삭제해 운영 DB를 정리한 뒤 실제 서비스에 배포.
 ---
 
 ## 빌드 및 배포
