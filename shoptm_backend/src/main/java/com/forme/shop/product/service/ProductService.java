@@ -10,6 +10,7 @@ import com.forme.shop.category.repository.CategoryRepository;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.multipart.MultipartFile;
@@ -29,6 +30,26 @@ public class ProductService {
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
     private final EntityManager entityManager;
+
+    // saveAndFlush()가 던진 DataIntegrityViolationException이 정말 브랜드당 추천상품 유니크
+    // 인덱스(products_brand_recommend_uk) 위반인지 확인한다. 같은 flush에 다른 상품들의
+    // isRecommend/curatorImageUrl 변경(위에서 기존 추천을 해제한 것)도 함께 반영되므로, 무관한
+    // 제약 위반(다른 CHECK/FK/유니크 등)까지 전부 "다른 관리자가 방금 바꿨다"는 안내로
+    // 뭉뚱그리면 실제 원인을 못 찾게 된다 — 이 인덱스 위반일 때만 그 안내를 쓰고, 아니면
+    // 그대로 다시 던져 원래 예외(→ 일반 500 처리)로 흘려보낸다.
+    // 주의: 이 예외를 잡는 catch 블록 뒤에 같은 트랜잭션에서 DB 문장을 더 실행하면 안 된다 —
+    // Postgres는 제약 위반이 나면 그 트랜잭션 전체를 abort 상태로 만들어서, 그 뒤에 어떤 쿼리를
+    // 보내도 "current transaction is aborted" 에러만 남. 예외를 잡은 뒤엔 바로 던지고 끝내야 한다
+    // (장바구니 담기에서 재시도 로직을 넣었다가 세션이 오염된 걸 겪고 원자적 upsert로 바꾼 것과
+    // 같은 이유 — 여기는 재시도가 없어 안전하지만, 나중에 이 catch 뒤에 코드를 추가하지 말 것).
+    private static boolean isBrandRecommendConflict(DataIntegrityViolationException e) {
+        // getConstraintName()은 Hibernate가 PostgreSQL의 제약 위반 오류에서 실제 제약 이름을
+        // 파싱해 채워주는 구조화된 값이라, JDBC 에러 메시지 문구에 의존하는 문자열 검사보다 안전하다.
+        if (e.getCause() instanceof org.hibernate.exception.ConstraintViolationException cve) {
+            return "products_brand_recommend_uk".equals(cve.getConstraintName());
+        }
+        return false;
+    }
 
     // application.yml 의 file.upload-dir 값 주입
     @Value("${file.upload-dir}")
@@ -142,6 +163,12 @@ public class ProductService {
                 p.setIsRecommend(false);
                 p.setCuratorImageUrl(null);
             }
+            // 기존 추천 해제를 여기서 먼저 flush해 DB에 반영한다 — 안 그러면 아래에서 새 상품을
+            // saveAndFlush()할 때 Hibernate가 같은 flush 안에서 INSERT를 UPDATE보다 항상 먼저
+            // 실행해(구현이 보장하는 순서), 기존 추천이 아직 안 풀린 상태에서 새 추천 상품이 먼저
+            // INSERT돼 브랜드당 추천상품 유니크 인덱스에 걸릴 수 있다 — 동시 요청이 전혀 없는
+            // 정상적인 단일 요청에서도 항상 발생하는 문제라 반드시 순서를 나눠야 한다.
+            productRepository.flush();
         }
 
         // ID 직접 지정 시 중복 체크
@@ -193,7 +220,15 @@ public class ProductService {
                     .mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum());
         }
 
-        return ProductResponseDto.from(productRepository.save(product));
+        // saveAndFlush로 즉시 INSERT를 실행해, isRecommend=true로 새 상품을 만드는 것과 동시에
+        // 같은 브랜드에 다른 상품을 추천 설정하는 요청이 겹치는 드문 경우 DB의 부분 유니크
+        // 인덱스(shoptm.sql 참고) 위반을 여기서 바로 잡아낸다.
+        try {
+            return ProductResponseDto.from(productRepository.saveAndFlush(product));
+        } catch (DataIntegrityViolationException e) {
+            if (!isBrandRecommendConflict(e)) throw e;
+            throw new IllegalArgumentException("방금 다른 관리자가 같은 브랜드의 추천상품을 변경했습니다. 새로고침 후 다시 시도해주세요.");
+        }
     }
 
     // 상품 수정 (관리자) - 다중 이미지 업로드
@@ -291,10 +326,25 @@ public class ProductService {
                 p.setIsRecommend(false);
                 p.setCuratorImageUrl(null);
             }
+            // 기존 추천 해제를 먼저 flush해 DB에 반영한 뒤에 새 추천을 설정한다 — 안 그러면
+            // 같은 flush 안에서 여러 UPDATE의 실행 순서가 코드 순서대로 보장되지 않아(Hibernate
+            // 구현 세부사항), product의 UPDATE가 existing의 UPDATE보다 먼저 나가 기존 추천이
+            // 아직 안 풀린 상태에서 새 추천이 먼저 반영될 수 있다 — 동시 요청 없이도 발생 가능.
+            productRepository.flush();
         }
 
         product.setIsRecommend(true);
         product.setCuratorImageUrl(curatorImageUrl);
+
+        // saveAndFlush로 즉시 UPDATE를 실행해, DB의 부분 유니크 인덱스(브랜드당 추천상품 1개,
+        // shoptm.sql 참고)를 위반하면 그 예외를 여기서 바로 잡아낸다. 서로 다른 상품을 같은
+        // 브랜드로 동시에 추천 설정하는 두 요청 중 나중에 도착한 쪽에서만 발생하는 드문 경우.
+        try {
+            productRepository.saveAndFlush(product);
+        } catch (DataIntegrityViolationException e) {
+            if (!isBrandRecommendConflict(e)) throw e;
+            throw new IllegalArgumentException("방금 다른 관리자가 같은 브랜드의 추천상품을 변경했습니다. 새로고침 후 다시 시도해주세요.");
+        }
         return ProductResponseDto.from(product);
     }
 

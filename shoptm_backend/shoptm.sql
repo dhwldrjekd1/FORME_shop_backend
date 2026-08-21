@@ -1460,6 +1460,24 @@ ALTER TABLE ONLY public.products
 
 
 --
+-- Name: products_brand_recommend_uk; Type: INDEX; Schema: public; Owner: postgres
+--
+-- 브랜드당 "활성" 추천상품(is_recommend=true AND is_active=true)은 하나만 허용.
+-- ProductService.setRecommend()/createProduct()가 "기존 추천 해제 후 새로 설정"을
+-- 체크-후-갱신으로 하는데, DB 제약이 없으면 서로 다른 상품을 동시에 추천 설정하는 두 요청이
+-- 둘 다 "기존 추천 없음"으로 보고 각자 자기 상품을 true로 세팅해 브랜드당 추천상품이 2개가
+-- 될 수 있었음. 부분 유니크 인덱스로 이 자체를 막아, 레이스가 나면 둘 중 나중에 커밋되는
+-- 쪽이 조용한 정합성 위반 대신 명확한 오류로 실패한다.
+-- is_active=true 조건이 반드시 필요한 이유: ProductRepository.findByBrandAndIsRecommendTrueAndIsActiveTrue()
+-- (기존 추천 해제 시 쓰는 조회)도 동일하게 is_active=true만 대상으로 하는데, 이 조건 없이
+-- is_recommend만으로 인덱스를 걸면 소프트 삭제된(is_active=false) 상품이 추천 상태로 남아있는
+-- 경우 그 조회에는 안 잡혀서 해제가 안 되는데 인덱스에는 여전히 걸려, 그 브랜드는 영원히
+-- 새 추천상품을 설정할 수 없게 막혀버린다.
+
+CREATE UNIQUE INDEX products_brand_recommend_uk ON public.products (brand) WHERE (is_recommend = true AND is_active = true);
+
+
+--
 -- Name: qna qna_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 
