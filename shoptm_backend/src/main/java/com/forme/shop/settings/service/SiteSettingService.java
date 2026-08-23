@@ -21,9 +21,6 @@ public class SiteSettingService {
 
     @Transactional
     public void setValue(String key, String value) {
-        SiteSetting setting = repository.findByKey(key)
-                .orElse(SiteSetting.builder().key(key).build());
-        setting.setValue(value);
-        repository.save(setting);
+        repository.upsertSetting(key, value);
     }
 }
