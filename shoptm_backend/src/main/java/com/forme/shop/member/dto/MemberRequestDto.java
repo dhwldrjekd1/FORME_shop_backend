@@ -2,6 +2,7 @@ package com.forme.shop.member.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
@@ -43,13 +44,27 @@ public class MemberRequestDto {
     }
 
     // 회원정보 수정 요청 시 받을 데이터
-    // 수정할 항목만 보내면 되므로 전부 선택 입력 (null 허용)
+    // 수정할 항목만 보내면 되므로 전부 선택 입력 (null 허용) — @NotBlank는 null 자체를 막아버려
+    // 이 선택 입력 방식과 안 맞으므로 쓸 수 없고, @Size/@Pattern은 null은 통과시키고 "보냈는데
+    // 비어있음/공백뿐임/너무 짧음"만 걸러내므로 이 방식과 호환된다.
     @Getter @Setter
     public static class Update {
+        // 공백만 있는 이름(" " 등)도 걸러내야 해서 @Size(min=1) 대신 "공백이 아닌 문자가 하나라도
+        // 있어야 함"을 뜻하는 정규식을 씀 — Register.name의 @NotBlank(trim 후 빈 문자열 판정)와
+        // 동일한 기준을 null 허용 필드에서도 유지하기 위함.
+        // 플래그: s(DOTALL) 없으면 개행이 포함된 이름이 매치 실패하고, U(UNICODE_CHARACTER_CLASS)
+        // 없으면 \S가 ASCII 공백만 인식해 전각 공백(U+3000, 한국어 IME에서 흔함)이나 줄바꿈
+        // 없는 공백(U+00A0, 복사-붙여넣기에서 흔함)만으로 된 이름을 걸러내지 못한다.
+        @Pattern(regexp = "(?sU).*\\S.*", message = "이름을 입력해주세요.")
         private String name;
         private String phone;
         private String address;
+
+        // 가입 시(Register.password)와 동일한 최소 길이를 요구한다. 예전엔 여기에 검증이
+        // 전혀 없어서 빈 문자열/한 글자짜리 비밀번호로도 그대로 변경될 수 있었음.
+        @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")
         private String password;
+
         private Double height;
         private Double weight;
         private String fit;

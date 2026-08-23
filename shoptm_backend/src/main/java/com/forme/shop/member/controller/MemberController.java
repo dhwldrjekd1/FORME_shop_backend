@@ -60,7 +60,7 @@ public class MemberController {
     @PutMapping("/members/{id}")
     public ResponseEntity<MemberResponseDto> update(
             @PathVariable Long id,
-            @RequestBody MemberRequestDto.Update dto) {  // 요청 Body의 JSON을 DTO로 변환
+            @Valid @RequestBody MemberRequestDto.Update dto) {  // 요청 Body의 JSON을 DTO로 변환
         return ResponseEntity.ok(memberService.update(id, dto));
     }
 
