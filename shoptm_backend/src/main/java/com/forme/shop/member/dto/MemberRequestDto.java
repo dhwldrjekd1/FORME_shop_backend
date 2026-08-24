@@ -65,6 +65,11 @@ public class MemberRequestDto {
         @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")
         private String password;
 
+        // 본인이 자기 비밀번호를 바꿀 때만 필요(MemberService.update() 참고) — 세션이 탈취돼도
+        // 현재 비밀번호를 모르면 새 비밀번호로 덮어쓸 수 없도록 막기 위함. 관리자가 다른 회원의
+        // 비밀번호를 대신 바꿔줄 땐 필요 없음.
+        private String currentPassword;
+
         private Double height;
         private Double weight;
         private String fit;

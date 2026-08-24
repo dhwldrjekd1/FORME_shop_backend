@@ -49,9 +49,18 @@ public class SecurityUtil {
     // 예: 다른 회원의 주문/장바구니/회원정보에 접근하려는 요청을 차단
     public static void checkOwnerOrAdmin(String resourceOwnerEmail) {
         if (isAdmin()) return;
-        String current = getCurrentEmail();
-        if (current == null || !current.equals(resourceOwnerEmail)) {
+        if (!isSelf(resourceOwnerEmail)) {
             throw new AccessDeniedException("본인의 정보만 접근할 수 있습니다.");
         }
+    }
+
+    // 현재 로그인한 사용자가 정확히 이 이메일 본인인지(관리자 여부와 무관하게).
+    // checkOwnerOrAdmin은 "본인 OR 관리자"를 허용해야 할 때 쓰고, 이건 "관리자여도 예외 없이
+    // 정말 본인이 맞는지"를 구분해야 하는 곳(예: 비밀번호 변경 시 현재 비밀번호 확인 여부)에서
+    // 쓴다 — 두 곳에서 "본인 판정" 로직이 따로 구현돼 있다가 나중에 어긋나는 것을 막기 위해
+    // 이메일 비교를 여기 한 곳에만 둔다.
+    public static boolean isSelf(String resourceOwnerEmail) {
+        String current = getCurrentEmail();
+        return current != null && current.equals(resourceOwnerEmail);
     }
 }
