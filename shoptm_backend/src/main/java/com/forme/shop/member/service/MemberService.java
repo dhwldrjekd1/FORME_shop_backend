@@ -77,14 +77,17 @@ public class MemberService {
         Member member = memberRepository.findByEmail(dto.getEmail())
                 .orElseThrow(() -> new IllegalArgumentException("이메일 또는 비밀번호가 틀렸습니다."));
 
+        // 비밀번호 검증을 계정 활성 여부보다 먼저 확인한다 — 순서가 바뀌어 있으면, 비밀번호를
+        // 전혀 몰라도 아무 값이나 넣어 "사용할 수 없는 계정입니다"가 뜨는지만 보고 그 이메일이
+        // 정지/탈퇴된 계정인지 알아낼 수 있는 계정 상태 열거(enumeration) 통로가 생긴다.
+        // 비밀번호가 맞아야만(=그 계정의 진짜 소유자여야만) 활성 여부를 알려주도록 순서를 바꿈.
+        if (!passwordEncoder.matches(dto.getPassword(), member.getPassword())) {
+            throw new IllegalArgumentException("이메일 또는 비밀번호가 틀렸습니다.");
+        }
+
         // 탈퇴/강퇴 회원 체크
         if (!member.getIsActive()) {
             throw new IllegalArgumentException("사용할 수 없는 계정입니다.");
-        }
-
-        // 비밀번호 검증
-        if (!passwordEncoder.matches(dto.getPassword(), member.getPassword())) {
-            throw new IllegalArgumentException("이메일 또는 비밀번호가 틀렸습니다.");
         }
 
         // JWT 토큰 생성
