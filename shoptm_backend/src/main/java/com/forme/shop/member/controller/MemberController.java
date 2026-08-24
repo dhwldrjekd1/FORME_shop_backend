@@ -67,9 +67,12 @@ public class MemberController {
     // 회원탈퇴
     // DELETE /api/members/{id}
     // 204 No Content: 처리 성공했지만 반환할 데이터 없음
+    // body는 선택 — 관리자가 다른 회원을 대신 탈퇴 처리할 땐 안 보내도 됨(MemberService 참고)
     @DeleteMapping("/members/{id}")
-    public ResponseEntity<Void> withdraw(@PathVariable Long id) {
-        memberService.withdraw(id);
+    public ResponseEntity<Void> withdraw(
+            @PathVariable Long id,
+            @RequestBody(required = false) MemberRequestDto.Withdraw dto) {
+        memberService.withdraw(id, dto != null ? dto.getCurrentPassword() : null);
         return ResponseEntity.noContent().build();
     }
 

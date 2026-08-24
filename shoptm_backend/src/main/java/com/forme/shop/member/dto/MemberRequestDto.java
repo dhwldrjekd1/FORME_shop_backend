@@ -74,4 +74,12 @@ public class MemberRequestDto {
         private Double weight;
         private String fit;
     }
+
+    // 회원탈퇴 요청 시 받을 데이터. 본인이 자기 계정을 탈퇴할 때만 currentPassword가 필요하고
+    // (MemberService.withdraw() 참고), 관리자가 다른 회원을 대신 탈퇴 처리할 땐 필요 없어서
+    // 필수(@NotBlank)로 두지 않는다 — 대신 서비스 계층에서 본인 여부에 따라 조건부로 확인한다.
+    @Getter @Setter
+    public static class Withdraw {
+        private String currentPassword;
+    }
 }

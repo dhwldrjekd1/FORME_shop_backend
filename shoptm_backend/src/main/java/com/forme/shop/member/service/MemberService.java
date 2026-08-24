@@ -121,20 +121,7 @@ public class MemberService {
         if (dto.getPhone()    != null) member.setPhone(dto.getPhone());
         if (dto.getAddress()  != null) member.setAddress(dto.getAddress());
         if (dto.getPassword() != null) {
-            // 자기 자신의 비밀번호를 바꾸는 경우(대상 계정 == 현재 로그인 계정)엔 현재 비밀번호
-            // 확인을 요구한다 — 안 그러면 세션이 탈취된 상태(XSS, 방치된 브라우저 등)에서 원래
-            // 비밀번호를 몰라도 새 비밀번호로 덮어써서 진짜 주인을 계정에서 영구히 쫓아낼 수
-            // 있었음. 이 판단은 role이 아니라 "대상이 본인 계정인지"로 해야 한다 — role로만
-            // 판단하면(!isAdmin()) 관리자가 '자기 자신의' 비밀번호를 바꿀 때도 확인이 빠져서,
-            // 정작 이 기능이 막으려던 것과 똑같이 관리자 세션이 탈취된 경우에 그대로 뚫린다.
-            // 관리자가 '다른' 회원의 비밀번호를 대신 바꿔주는 경우(분실 계정 지원 등)만
-            // 확인에서 제외한다 — 그때는 애초에 현재 비밀번호를 모르는 게 정상 시나리오이므로.
-            if (SecurityUtil.isSelf(member.getEmail())) {
-                if (dto.getCurrentPassword() == null
-                        || !passwordEncoder.matches(dto.getCurrentPassword(), member.getPassword())) {
-                    throw new IllegalArgumentException("현재 비밀번호가 일치하지 않습니다.");
-                }
-            }
+            requireCurrentPasswordIfSelf(member, dto.getCurrentPassword());
             member.setPassword(passwordEncoder.encode(dto.getPassword()));
         }
         if (dto.getHeight()   != null) member.setHeight(dto.getHeight());
@@ -147,18 +134,35 @@ public class MemberService {
     // 회원탈퇴 (소프트 삭제)
     // 실제 DB에서 삭제하지 않고 isActive = false 로 변경
     @Transactional
-    public void withdraw(Long id) {
+    public void withdraw(Long id, String currentPassword) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
         // 본인(또는 관리자)만 탈퇴 처리 가능
         SecurityUtil.checkOwnerOrAdmin(member.getEmail());
 
+        requireCurrentPasswordIfSelf(member, currentPassword);
+
         member.setIsActive(false);  // 비활성화 처리
         member.setDeactivatedAt(LocalDateTime.now());
         // 이미 발급된 토큰이 남아있으면(다른 기기 로그인 등) 탈퇴 후에도 만료 전까지
         // 계속 인증되던 문제 — 이 회원의 모든 토큰을 즉시 무효화
         tokenBlacklistService.revokeAllForEmail(member.getEmail());
+    }
+
+    // 본인이 자기 계정에 대해 민감한 작업(비밀번호 변경, 탈퇴)을 할 때 현재 비밀번호를 요구한다 —
+    // 세션이 탈취된 상태(XSS, 방치된 브라우저 등)에서도 진짜 비밀번호를 몰라야 이런 작업을 못 하게
+    // 막기 위함. "본인 여부" 판단은 role이 아니라 isSelf(대상 계정 == 현재 로그인 계정)로 해야
+    // 한다 — role로만 판단하면(!isAdmin()) 관리자가 '자기 자신'에 대해 이 작업을 할 때도 확인이
+    // 빠져서, 정작 이 검사가 막으려던 것과 똑같이 관리자 세션이 탈취된 경우에 그대로 뚫린다.
+    // 관리자가 '다른' 회원을 대신 처리하는 경우(비밀번호 분실 지원, 강제 탈퇴 등)는 제외한다 —
+    // 그때는 애초에 그 회원의 비밀번호를 모르는 게 정상 시나리오이므로.
+    private void requireCurrentPasswordIfSelf(Member member, String currentPassword) {
+        if (SecurityUtil.isSelf(member.getEmail())) {
+            if (currentPassword == null || !passwordEncoder.matches(currentPassword, member.getPassword())) {
+                throw new IllegalArgumentException("현재 비밀번호가 일치하지 않습니다.");
+            }
+        }
     }
 
     // 로그아웃 — 지금 쓰던 토큰의 jti를 블랙리스트에 등록해서 만료 전이라도 즉시 무효화
