@@ -8,7 +8,7 @@ import com.forme.shop.board.repository.BoardRepository;
 import com.forme.shop.board.repository.CommentRepository;
 import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
-import com.forme.shop.member.repository.MemberRepository;
+import com.forme.shop.member.service.MemberService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -22,7 +22,7 @@ public class CommentService {
 
     private final CommentRepository commentRepository;
     private final BoardRepository boardRepository;
-    private final MemberRepository memberRepository;
+    private final MemberService memberService;
 
     // 특정 게시글의 댓글 목록 조회
     // 오래된 순서로 반환 (댓글은 위에서 아래로 시간순)
@@ -33,8 +33,11 @@ public class CommentService {
                 .collect(Collectors.toList());
     }
 
-    // 특정 회원이 작성한 댓글 목록 조회
+    // 특정 회원이 작성한 댓글 목록 조회 ("내 댓글" — 작성/수정/삭제와 달리 이 조회에는 소유자
+    // 검증이 통째로 빠져 있어서, memberId만 바꿔서 다른 회원의 댓글 목록을 그대로 볼 수 있었음
     public List<CommentResponseDto> getMyComments(Long memberId) {
+        memberService.findSelfOrAdminMember(memberId);
+
         return commentRepository.findByMemberIdAndIsActiveTrueOrderByCreatedAtDesc(memberId)
                 .stream()
                 .map(CommentResponseDto::from)
@@ -54,12 +57,8 @@ public class CommentService {
             throw new IllegalArgumentException("삭제된 게시글에는 댓글을 작성할 수 없습니다.");
         }
 
-        // 회원 존재 여부 확인
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-
         // 본인(또는 관리자) 명의로만 댓글 작성 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        Member member = memberService.findSelfOrAdminMember(memberId);
 
         Comment comment = Comment.builder()
                 .board(board)

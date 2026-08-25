@@ -8,6 +8,7 @@ import com.forme.shop.member.dto.MemberResponseDto;
 import com.forme.shop.member.entity.Member;  // 반드시 우리 Member 클래스 import
 import com.forme.shop.member.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -54,15 +55,28 @@ public class MemberService {
 
     // 회원 단건 조회 (마이페이지)
     public MemberResponseDto getMember(Long id) {
+        return MemberResponseDto.from(findSelfOrAdminMember(id));
+    }
 
-        // orElseThrow: 회원이 없으면 예외 발생
-        Member member = memberRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-
-        // 본인(또는 관리자)만 조회 가능 — 로그인한 아무 회원이나 id만 바꿔서 조회하는 것 방지
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
-
-        return MemberResponseDto.from(member);
+    // "회원 id로 대상을 찾되, 본인 것이거나 관리자일 때만 결과를 내어준다"를 한 번에 처리한다.
+    // 대상을 먼저 조회해서 없으면 400, 있는데 내 게 아니면 403을 따로 응답하면(예전 코드),
+    // 로그인만 한 상태로 남의 id를 넣어봤을 때 그 응답 차이만으로 유효한 회원 id를 하나씩
+    // 찾아낼 수 있는 열거(enumeration) 통로가 생긴다. 그래서 관리자가 아니면 "존재하지 않음"과
+    // "존재하지만 내 게 아님"을 구분하지 않고 항상 같은 403 하나로만 응답한다 — 이 프로젝트
+    // 곳곳에서 memberId를 받는 다른 서비스(장바구니/주문/찜/Q&A/게시판·댓글)도 전부 이 메서드를
+    // 통해 회원을 조회하도록 해서 같은 열거 통로가 반복해서 생기지 않게 한다.
+    public Member findSelfOrAdminMember(Long id) {
+        Member member = memberRepository.findById(id).orElse(null);
+        if (SecurityUtil.isAdmin()) {
+            if (member == null) {
+                throw new IllegalArgumentException("존재하지 않는 회원입니다.");
+            }
+            return member;
+        }
+        if (member == null || !SecurityUtil.isSelf(member.getEmail())) {
+            throw new AccessDeniedException("본인의 정보만 접근할 수 있습니다.");
+        }
+        return member;
     }
 
     private final JwtUtil jwtUtil;  // 필드에 추가
@@ -110,11 +124,7 @@ public class MemberService {
     // 회원정보 수정
     @Transactional
     public MemberResponseDto update(Long id, MemberRequestDto.Update dto) {
-        Member member = memberRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-
-        // 본인(또는 관리자)만 수정 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        Member member = findSelfOrAdminMember(id);
 
         // null 체크 후 값이 있을 때만 수정 (부분 수정 가능)
         if (dto.getName()     != null) member.setName(dto.getName());
@@ -135,11 +145,7 @@ public class MemberService {
     // 실제 DB에서 삭제하지 않고 isActive = false 로 변경
     @Transactional
     public void withdraw(Long id, String currentPassword) {
-        Member member = memberRepository.findById(id)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-
-        // 본인(또는 관리자)만 탈퇴 처리 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        Member member = findSelfOrAdminMember(id);
 
         requireCurrentPasswordIfSelf(member, currentPassword);
 

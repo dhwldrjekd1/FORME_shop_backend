@@ -6,7 +6,7 @@ import com.forme.shop.board.entity.Board;
 import com.forme.shop.board.repository.BoardRepository;
 import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
-import com.forme.shop.member.repository.MemberRepository;
+import com.forme.shop.member.service.MemberService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,7 +19,7 @@ import java.util.stream.Collectors;
 public class BoardService {
 
     private final BoardRepository boardRepository;
-    private final MemberRepository memberRepository;
+    private final MemberService memberService;
 
     // 전체 게시글 목록 조회
     // 삭제되지 않은 게시글만 최신순으로 반환
@@ -59,8 +59,12 @@ public class BoardService {
         return BoardResponseDto.from(updated);
     }
 
-    // 특정 회원의 게시글 목록 조회
+    // 특정 회원의 게시글 목록 조회 ("내 글" — 작성/수정/삭제와 달리 이 조회에는 소유자 검증이
+    // 통째로 빠져 있어서, 로그인한 회원이면 누구나 memberId만 바꿔서 다른 회원이 쓴 글 목록을
+    // 그대로 볼 수 있었음 (이 라우트 자체는 인증이 필요해 비회원은 애초에 못 들어옴)
     public List<BoardResponseDto> getMyBoards(Long memberId) {
+        memberService.findSelfOrAdminMember(memberId);
+
         return boardRepository.findByMemberIdAndIsActiveTrueOrderByCreatedAtDesc(memberId)
                 .stream()
                 .map(BoardResponseDto::from)
@@ -78,12 +82,8 @@ public class BoardService {
     // 게시글 작성
     @Transactional
     public BoardResponseDto createBoard(Long memberId, BoardRequestDto.Create dto) {
-        // 회원 존재 여부 확인
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-
         // 본인(또는 관리자) 명의로만 게시글 작성 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        Member member = memberService.findSelfOrAdminMember(memberId);
 
         Board board = Board.builder()
                 .member(member)

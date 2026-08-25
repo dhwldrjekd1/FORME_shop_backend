@@ -3,6 +3,7 @@ package com.forme.shop.order.service;
 import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
+import com.forme.shop.member.service.MemberService;
 import com.forme.shop.order.dto.OrderRequestDto;
 import com.forme.shop.order.dto.OrderResponseDto;
 import com.forme.shop.order.entity.OrderItem;
@@ -33,6 +34,7 @@ public class OrderService {
 
     private final OrderRepository orderRepository;
     private final MemberRepository memberRepository;
+    private final MemberService memberService;
     private final ProductRepository productRepository;
     private final PaymentService paymentService;
 
@@ -40,12 +42,8 @@ public class OrderService {
     @Transactional
     public OrderResponseDto createOrder(Long memberId, OrderRequestDto.Create dto) {
 
-        // 회원 존재 여부 확인
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-
         // 본인(또는 관리자)만 자신의 이름으로 주문 생성 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        Member member = memberService.findSelfOrAdminMember(memberId);
 
         // 토스 결제를 거쳐 들어온 주문이면, 이 결제를 "지금 이 요청이" 쓰겠다고 먼저 선점한다.
         // 같은 paymentKey로 거의 동시에 두 번째 요청이 들어오면(더블클릭, 느린 응답 후 재시도)
@@ -233,9 +231,7 @@ public class OrderService {
     // 내 주문 목록 조회 (일반회원)
     public List<OrderResponseDto> getMyOrders(Long memberId) {
         // 본인(또는 관리자)의 주문 목록만 조회 가능
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        memberService.findSelfOrAdminMember(memberId);
 
         return orderRepository.findByMemberIdOrderByCreatedAtDesc(memberId)
                 .stream()

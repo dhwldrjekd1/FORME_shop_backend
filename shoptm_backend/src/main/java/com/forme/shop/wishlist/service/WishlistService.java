@@ -1,8 +1,6 @@
 package com.forme.shop.wishlist.service;
 
-import com.forme.shop.common.security.SecurityUtil;
-import com.forme.shop.member.entity.Member;
-import com.forme.shop.member.repository.MemberRepository;
+import com.forme.shop.member.service.MemberService;
 import com.forme.shop.product.repository.ProductRepository;
 import com.forme.shop.wishlist.dto.WishlistResponseDto;
 import com.forme.shop.wishlist.repository.WishlistRepository;
@@ -19,14 +17,13 @@ import java.util.stream.Collectors;
 public class WishlistService {
 
     private final WishlistRepository wishlistRepository;
-    private final MemberRepository memberRepository;
+    private final MemberService memberService;
     private final ProductRepository productRepository;
 
     public List<WishlistResponseDto> getWishlist(Long memberId) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-        // 본인(또는 관리자)의 찜 목록만 조회 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        // 본인(또는 관리자)의 찜 목록만 조회 가능 — 존재 여부 확인과 소유자 확인을 한 번에
+        // 처리하는 이유는 MemberService.findSelfOrAdminMember() 주석 참고 (회원 id 열거 방지)
+        memberService.findSelfOrAdminMember(memberId);
 
         return wishlistRepository.findByMemberId(memberId).stream()
                 .map(WishlistResponseDto::from)
@@ -35,10 +32,8 @@ public class WishlistService {
 
     @Transactional
     public WishlistResponseDto addWishlist(Long memberId, Long productId) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
         // 본인(또는 관리자)의 찜 목록에만 추가 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        memberService.findSelfOrAdminMember(memberId);
 
         if (!productRepository.existsById(productId)) {
             throw new IllegalArgumentException("존재하지 않는 상품입니다.");
@@ -55,10 +50,8 @@ public class WishlistService {
 
     @Transactional
     public void removeWishlist(Long memberId, Long productId) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
         // 본인(또는 관리자) 소유의 찜 목록에서만 삭제 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        memberService.findSelfOrAdminMember(memberId);
 
         wishlistRepository.deleteByMemberIdAndProductId(memberId, productId);
     }

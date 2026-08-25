@@ -1,8 +1,7 @@
 package com.forme.shop.review.service;
 
 import com.forme.shop.common.security.SecurityUtil;
-import com.forme.shop.member.entity.Member;
-import com.forme.shop.member.repository.MemberRepository;
+import com.forme.shop.member.service.MemberService;
 import com.forme.shop.order.entity.Orders;
 import com.forme.shop.order.repository.OrderRepository;
 import com.forme.shop.product.repository.ProductRepository;
@@ -23,7 +22,7 @@ import java.util.stream.Collectors;
 public class ReviewService {
 
     private final ReviewRepository reviewRepository;
-    private final MemberRepository memberRepository;
+    private final MemberService memberService;
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
 
@@ -35,8 +34,11 @@ public class ReviewService {
                 .collect(Collectors.toList());
     }
 
-    // 내가 작성한 리뷰 목록 조회 (일반회원)
+    // 내가 작성한 리뷰 목록 조회 (일반회원) — 작성/수정/삭제와 달리 이 조회에는 소유자 검증이
+    // 통째로 빠져 있어서, memberId만 바꿔서 다른 회원이 쓴 리뷰 목록을 그대로 볼 수 있었음
     public List<ReviewResponseDto> getMyReviews(Long memberId) {
+        memberService.findSelfOrAdminMember(memberId);
+
         return reviewRepository.findByMemberIdAndIsActiveTrueOrderByCreatedAtDesc(memberId)
                 .stream()
                 .map(ReviewResponseDto::from)
@@ -49,11 +51,8 @@ public class ReviewService {
     @Transactional
     public ReviewResponseDto createReview(Long memberId, ReviewRequestDto.Create dto) {
 
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-
         // 본인(또는 관리자) 명의로만 리뷰 작성 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        memberService.findSelfOrAdminMember(memberId);
 
         if (!productRepository.existsById(dto.getProductId())) {
             throw new IllegalArgumentException("존재하지 않는 상품입니다.");

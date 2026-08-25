@@ -2,7 +2,7 @@ package com.forme.shop.qna.service;
 
 import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
-import com.forme.shop.member.repository.MemberRepository;
+import com.forme.shop.member.service.MemberService;
 import com.forme.shop.product.entity.Product;
 import com.forme.shop.product.repository.ProductRepository;
 import com.forme.shop.qna.dto.QnaRequestDto;
@@ -23,7 +23,7 @@ import java.util.stream.Collectors;
 public class QnaService {
 
     private final QnaRepository qnaRepository;
-    private final MemberRepository memberRepository;
+    private final MemberService memberService;
     private final ProductRepository productRepository;
 
     // 이 요청을 보낸 사람이 이 Q&A의 비밀글 내용을 볼 수 있는지 (작성자 본인 또는 관리자)
@@ -46,11 +46,10 @@ public class QnaService {
     // 특정 회원의 Q&A 목록 조회 ("내 문의" — 본인 또는 관리자만 조회 가능)
     // member_id 로 필터링, is_active = true 인 것만 최신순 반환
     public List<QnaResponseDto> getMyQna(Long memberId) {
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
         // 본인(또는 관리자)만 조회 가능 — 그렇지 않으면 다른 회원의 문의(비밀글 포함)를
-        // memberId만 바꿔서 그대로 열람할 수 있었음
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        // memberId만 바꿔서 그대로 열람할 수 있었음. 존재 여부 확인과 소유자 확인을 한 번에
+        // 처리하는 이유는 MemberService.findSelfOrAdminMember() 주석 참고 (회원 id 열거 방지)
+        memberService.findSelfOrAdminMember(memberId);
 
         // 전부 본인(또는 관리자가 조회하는 본인) 소유이므로 가릴 필요 없이 그대로 반환
         return qnaRepository.findByMemberIdAndIsActiveTrueOrderByCreatedAtDesc(memberId)
@@ -79,12 +78,8 @@ public class QnaService {
     @Transactional
     public QnaResponseDto createQna(Long memberId, QnaRequestDto.Create dto) {
 
-        // 회원 존재 여부 확인
-        Member member = memberRepository.findById(memberId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
-
         // 본인(또는 관리자) 명의로만 질문 등록 가능
-        SecurityUtil.checkOwnerOrAdmin(member.getEmail());
+        Member member = memberService.findSelfOrAdminMember(memberId);
 
         // 상품이 있으면 존재 여부 확인 (선택사항)
         // product_id 가 null 이면 일반 문의로 처리
