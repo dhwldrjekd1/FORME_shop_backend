@@ -54,6 +54,25 @@ public class OrderService {
                 ? dto.getPaymentKey() : null;
         Payment claimedPayment = null;
         if (paymentKey != null) {
+            // 선점(claim)을 시도하기 전에 이 결제를 실제로 승인받은 사람과 지금 주문을 만들
+            // 대상 회원이 같은지부터 확인한다. paymentKey 값만 알아내면(성공 리다이렉트 URL
+            // 쿼리 파라미터로 남는 값이라 브라우저 히스토리·Referer 등으로 노출될 수 있음)
+            // 다른 계정으로 로그인해 남이 이미 결제한 건을 자기 주문으로 가로챌 수 있었음.
+            // 선점부터 하고 소유자가 다르면 되돌리는 순서로 짜면, 그 사이의 아주 짧은 순간이라도
+            // 진짜 소유자의 동시 요청이 "이미 처리 중"으로 잘못 거부될 수 있는 경쟁 상태가
+            // 생기므로, 아예 선점 이전에 확인해 그 경쟁 자체를 없앤다.
+            // memberEmail이 null이면(이 컬럼이 생기기 전에 이미 CONFIRMED로 남아있던 결제 —
+            // 주문 생성 전 이탈 등으로 orphan된 기존 행) 소유자를 아예 모르는 상태이므로 이
+            // 확인을 건너뛴다. null을 "내 게 아님"으로 취급해 막아버리면, 이 컬럼 도입 시점에
+            // 우연히 남아있던 정상 결제의 진짜 소유자가 영구히 주문을 완료하지 못하고(자동 환불
+            // 경로도 타지 않아 수동 확인 없이는 복구 불가) 발이 묶인다. 이 컬럼 도입 이후 생성되는
+            // 결제는 TossController에서 항상 memberEmail을 채우므로 이 우회는 과거 데이터에만 적용된다.
+            Payment existingPayment = paymentService.findByPaymentKeyOrNull(paymentKey);
+            if (existingPayment != null && existingPayment.getMemberEmail() != null
+                    && !member.getEmail().equals(existingPayment.getMemberEmail())) {
+                throw new IllegalArgumentException("본인이 진행한 결제로만 주문을 생성할 수 있습니다.");
+            }
+
             if (paymentService.claimForOrderCreation(paymentKey)) {
                 claimedPayment = paymentService.getByPaymentKey(paymentKey);
             } else {

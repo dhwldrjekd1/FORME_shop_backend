@@ -47,7 +47,7 @@ public class PaymentService {
     // 결제 승인 성공 직후 기록 — 이 시점 이후로는 주문 생성이 무슨 이유로 실패하든
     // "카드는 결제됐다"는 사실이 DB에 남아있어야 함
     @Transactional
-    public void recordConfirmed(String paymentKey, String tossOrderId, int amount) {
+    public void recordConfirmed(String paymentKey, String tossOrderId, int amount, String memberEmail) {
         // 같은 paymentKey로 이미 기록이 있으면(승인 응답 재처리 등) 새로 만들지 않음
         if (paymentRepository.findByPaymentKey(paymentKey).isPresent()) return;
         try {
@@ -58,6 +58,7 @@ public class PaymentService {
                     .paymentKey(paymentKey)
                     .tossOrderId(tossOrderId)
                     .amount(amount)
+                    .memberEmail(memberEmail)
                     .status("CONFIRMED")
                     .build());
         } catch (DataIntegrityViolationException e) {
@@ -83,6 +84,14 @@ public class PaymentService {
     public Payment getByPaymentKey(String paymentKey) {
         return paymentRepository.findByPaymentKey(paymentKey)
                 .orElseThrow(() -> new IllegalStateException("결제 승인 기록을 찾을 수 없습니다: " + paymentKey));
+    }
+
+    // 선점(claim) 시도 전에 소유자만 미리 확인하기 위한 조회 — 기록이 없으면 예외 대신 null을
+    // 반환한다. 선점부터 하고 소유자가 다르면 되돌리는(release) 순서로 짜면, 그 사이의 아주 짧은
+    // 순간이라도 다른 요청(진짜 소유자의 동시 요청 등)이 이 결제를 선점하지 못해 실패하는 경쟁
+    // 상태가 생긴다 — 소유자 확인을 선점보다 먼저 해서 그 경쟁 자체를 없앤다.
+    public Payment findByPaymentKeyOrNull(String paymentKey) {
+        return paymentRepository.findByPaymentKey(paymentKey).orElse(null);
     }
 
     // 선점에 실패했을 때, 이미 이 결제로 주문이 만들어져 있다면(재시도/더블클릭) 그 주문을 그대로

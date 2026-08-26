@@ -42,6 +42,12 @@ public class Payment {
     private Integer amount;
     // 토스가 실제로 승인했다고 응답한 금액
 
+    @Column(length = 255)
+    private String memberEmail;
+    // 이 결제를 실제로 승인받은(=confirm을 호출한) 회원의 이메일. 주문 생성 시 이 값과
+    // 대상 회원이 같은지 확인해, paymentKey만 알아내서 남의 결제로 주문을 가로채지 못하게 막는 데 쓴다
+    // (OrderService.createOrder 참고). 이 컬럼 추가 이전에 생성된 기존 행은 NULL로 남아있음.
+
     @Builder.Default
     @Column(nullable = false, length = 30)
     private String status = "CONFIRMED";

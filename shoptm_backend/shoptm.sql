@@ -420,6 +420,7 @@ CREATE TABLE public.payments (
     payment_key character varying(200) NOT NULL,
     toss_order_id character varying(100) NOT NULL,
     amount integer NOT NULL,
+    member_email character varying(255),
     status character varying(30) DEFAULT 'CONFIRMED'::character varying NOT NULL,
     order_id bigint,
     fail_reason character varying(255),

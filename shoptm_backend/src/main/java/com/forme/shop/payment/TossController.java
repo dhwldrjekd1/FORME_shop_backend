@@ -1,5 +1,6 @@
 package com.forme.shop.payment;
 
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -65,7 +66,12 @@ public class TossController {
             // 결제 승인이 여기서 이미 확정(카드 결제 완료)됐으므로, 이후 주문 생성이
             // 어떤 이유로든 실패해도 "결제는 됐는데 기록이 없는" 상태가 남지 않도록 즉시 저장.
             // paymentKey는 그대로 응답에 포함해 프론트가 주문 생성 요청에 함께 실어 보내도록 함.
-            paymentService.recordConfirmed(paymentKey, orderId, ((Number) confirmedAmount).intValue());
+            // 이 결제를 실제로 승인받은 사람이 누구인지 기록해둔다 — 이후 주문 생성 시 이 값과
+            // 대상 회원이 같은지 확인해, paymentKey만 알아내서 남의 결제로 주문을 가로채는 것을
+            // 막는 데 쓴다(OrderService.createOrder 참고). 이 엔드포인트는 SecurityConfig에서
+            // 이미 인증이 필요하므로 getCurrentEmail()은 항상 로그인한 사용자의 이메일을 반환한다.
+            paymentService.recordConfirmed(
+                    paymentKey, orderId, ((Number) confirmedAmount).intValue(), SecurityUtil.getCurrentEmail());
 
             return ResponseEntity.ok(Map.of(
                     "success", true,
