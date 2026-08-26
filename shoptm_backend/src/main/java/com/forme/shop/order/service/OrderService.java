@@ -16,6 +16,7 @@ import com.forme.shop.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -241,24 +242,34 @@ public class OrderService {
 
     // 주문 단건 조회
     public OrderResponseDto getOrder(Long orderId) {
-        Orders orders = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
-
-        // 본인(또는 관리자) 소유의 주문만 조회 가능
-        SecurityUtil.checkOwnerOrAdmin(orders.getMember().getEmail());
-
+        Orders orders = findSelfOrAdminOrder(orderId);
         return OrderResponseDto.from(orders);
+    }
+
+    // "주문 id로 대상을 찾되, 본인 것이거나 관리자일 때만 결과를 내어준다"를 한 번에 처리한다.
+    // MemberService.findSelfOrAdminMember()와 같은 이유(존재 여부 열거 방지) — 대상을 먼저
+    // 조회해서 없으면 400, 있는데 내 게 아니면 403을 따로 응답하면, 로그인만 한 상태로 남의
+    // 주문 id를 넣어봤을 때 그 응답 차이만으로 유효한 주문 id를 하나씩 찾아낼 수 있었다.
+    // DeliveryService도 같은 이유로 이 메서드를 그대로 재사용한다.
+    public Orders findSelfOrAdminOrder(Long orderId) {
+        Orders orders = orderRepository.findById(orderId).orElse(null);
+        if (SecurityUtil.isAdmin()) {
+            if (orders == null) {
+                throw new IllegalArgumentException("존재하지 않는 주문입니다.");
+            }
+            return orders;
+        }
+        if (orders == null || !SecurityUtil.isSelf(orders.getMember().getEmail())) {
+            throw new AccessDeniedException("본인의 정보만 접근할 수 있습니다.");
+        }
+        return orders;
     }
 
     // 주문 취소 (일반회원)
     // PAID 상태일 때만 취소 가능
     @Transactional
     public void cancelOrder(Long orderId) {
-        Orders orders = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
-
-        // 본인(또는 관리자) 소유의 주문만 취소 가능
-        SecurityUtil.checkOwnerOrAdmin(orders.getMember().getEmail());
+        Orders orders = findSelfOrAdminOrder(orderId);
 
         // PAID 상태가 아니면 취소 불가 (화면에 보여줄 안내용 사전 확인 — 실제로 "딱 한 번만
         // 취소되게" 보장하는 지점은 아래 cancelIfPaid의 WHERE절. 이 확인만 믿으면, 같은

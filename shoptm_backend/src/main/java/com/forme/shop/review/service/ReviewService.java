@@ -60,12 +60,14 @@ public class ReviewService {
 
         // 주문 확인 (선택 — orderId가 null이면 "구매 인증" 배지 없이 리뷰 가능)
         if (dto.getOrderId() != null) {
-            Orders orders = orderRepository.findById(dto.getOrderId())
-                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+            // "존재하지 않는 주문"과 "존재하지만 내 주문이 아님"을 서로 다른 메시지로 구분해서
+            // 응답하면, 그 차이만으로 유효한 주문 id를 하나씩 찾아낼 수 있는 열거 통로가 되므로
+            // (OrderService.findSelfOrAdminOrder() 주석 참고) 두 경우 모두 같은 메시지로 응답한다.
+            Orders orders = orderRepository.findById(dto.getOrderId()).orElse(null);
 
             // 구매확인(orders 연결)은 실제로 본인이 그 상품을 주문했을 때만 성립해야 하므로,
             // 남의 주문이거나 그 주문에 없는 상품을 걸어 "구매 인증" 리뷰를 위조하지 못하도록 검증
-            if (!orders.getMember().getId().equals(memberId)) {
+            if (orders == null || !orders.getMember().getId().equals(memberId)) {
                 throw new IllegalArgumentException("본인의 주문에 대해서만 리뷰를 작성할 수 있습니다.");
             }
             boolean containsProduct = orders.getOrderItems().stream()

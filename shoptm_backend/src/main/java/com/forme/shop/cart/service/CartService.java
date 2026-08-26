@@ -8,6 +8,7 @@ import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.service.MemberService;
 import com.forme.shop.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -66,11 +67,7 @@ public class CartService {
     // 장바구니 수량 수정
     @Transactional
     public CartResponseDto updateCart(Long cartId, CartRequestDto.Update dto) {
-        Cart cart = cartRepository.findById(cartId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 장바구니입니다."));
-
-        // 본인(또는 관리자) 소유의 장바구니 항목만 수정 가능
-        SecurityUtil.checkOwnerOrAdmin(cart.getMember().getEmail());
+        Cart cart = findSelfOrAdminCart(cartId);
 
         cart.setQuantity(dto.getQuantity());  // 수량 변경 (더티 체킹으로 자동 저장)
         return CartResponseDto.from(cart);
@@ -79,13 +76,28 @@ public class CartService {
     // 장바구니 단건 삭제
     @Transactional
     public void deleteCart(Long cartId) {
-        Cart cart = cartRepository.findById(cartId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 장바구니입니다."));
-
-        // 본인(또는 관리자) 소유의 장바구니 항목만 삭제 가능
-        SecurityUtil.checkOwnerOrAdmin(cart.getMember().getEmail());
+        Cart cart = findSelfOrAdminCart(cartId);
 
         cartRepository.delete(cart);
+    }
+
+    // "장바구니 항목 id로 대상을 찾되, 본인 것이거나 관리자일 때만 결과를 내어준다"를 한 번에
+    // 처리한다. MemberService.findSelfOrAdminMember()와 같은 이유(존재 여부 열거 방지) —
+    // 대상을 먼저 조회해서 없으면 400, 있는데 내 게 아니면 403을 따로 응답하면, 로그인만 한
+    // 상태로 남의 cartId를 넣어봤을 때 그 응답 차이만으로 유효한 장바구니 항목 id를 하나씩
+    // 찾아낼 수 있었다.
+    private Cart findSelfOrAdminCart(Long cartId) {
+        Cart cart = cartRepository.findById(cartId).orElse(null);
+        if (SecurityUtil.isAdmin()) {
+            if (cart == null) {
+                throw new IllegalArgumentException("존재하지 않는 장바구니입니다.");
+            }
+            return cart;
+        }
+        if (cart == null || !SecurityUtil.isSelf(cart.getMember().getEmail())) {
+            throw new AccessDeniedException("본인의 정보만 접근할 수 있습니다.");
+        }
+        return cart;
     }
 
     // 장바구니 전체 삭제

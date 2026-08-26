@@ -3,10 +3,10 @@ package com.forme.shop.delivery.service;
 import com.forme.shop.delivery.dto.DeliveryRequestDto;
 import com.forme.shop.delivery.dto.DeliveryResponseDto;
 import com.forme.shop.delivery.entity.Delivery;
-import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.delivery.repository.DeliveryRepository;
 import com.forme.shop.order.entity.Orders;
 import com.forme.shop.order.repository.OrderRepository;
+import com.forme.shop.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,14 +21,12 @@ public class DeliveryService {
 
     private final DeliveryRepository deliveryRepository;
     private final OrderRepository orderRepository;
+    private final OrderService orderService;
 
-    // 특정 주문의 배송 정보 조회
+    // 특정 주문의 배송 정보 조회 — 존재 여부 확인과 소유자 확인을 한 번에 처리하는 이유는
+    // OrderService.findSelfOrAdminOrder() 주석 참고 (주문 id 열거 방지)
     public DeliveryResponseDto getDelivery(Long orderId) {
-        Orders orders = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
-
-        // 본인(또는 관리자) 소유의 주문 배송 정보만 조회 가능
-        SecurityUtil.checkOwnerOrAdmin(orders.getMember().getEmail());
+        orderService.findSelfOrAdminOrder(orderId);
 
         Delivery delivery = deliveryRepository.findByOrdersId(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("배송 정보가 없습니다."));
