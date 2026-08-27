@@ -10,6 +10,7 @@ import com.forme.shop.qna.dto.QnaResponseDto;
 import com.forme.shop.qna.entity.Qna;
 import com.forme.shop.qna.repository.QnaRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -103,11 +104,7 @@ public class QnaService {
     // 질문 수정 (일반회원)
     @Transactional
     public QnaResponseDto updateQna(Long qnaId, QnaRequestDto.Update dto) {
-        Qna qna = qnaRepository.findById(qnaId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Q&A입니다."));
-
-        // 본인(또는 관리자) 소유의 Q&A만 수정 가능
-        SecurityUtil.checkOwnerOrAdmin(qna.getMember().getEmail());
+        Qna qna = findSelfOrAdminQna(qnaId);
 
         // null 체크 후 값이 있을 때만 수정 (부분 수정 가능)
         if (dto.getTitle()    != null) qna.setTitle(dto.getTitle());
@@ -122,13 +119,27 @@ public class QnaService {
     // DB 에서 실제 삭제 안 하고 is_active = false 로 변경
     @Transactional
     public void deleteQna(Long qnaId) {
-        Qna qna = qnaRepository.findById(qnaId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Q&A입니다."));
-
-        // 본인(또는 관리자) 소유의 Q&A만 삭제 가능
-        SecurityUtil.checkOwnerOrAdmin(qna.getMember().getEmail());
+        Qna qna = findSelfOrAdminQna(qnaId);
 
         qna.setIsActive(false);  // 비활성화 처리 (소프트 삭제)
+    }
+
+    // "Q&A id로 대상을 찾되, 본인 것이거나 관리자일 때만 결과를 내어준다"를 한 번에 처리한다.
+    // MemberService.findSelfOrAdminMember()와 같은 이유(존재 여부 열거 방지) — 대상을 먼저
+    // 조회해서 없으면 400, 있는데 내 게 아니면 403을 따로 응답하면, 로그인만 한 상태로 남의
+    // qnaId를 넣어봤을 때 그 응답 차이만으로 유효한 Q&A id를 하나씩 찾아낼 수 있었다.
+    private Qna findSelfOrAdminQna(Long qnaId) {
+        Qna qna = qnaRepository.findById(qnaId).orElse(null);
+        if (SecurityUtil.isAdmin()) {
+            if (qna == null) {
+                throw new IllegalArgumentException("존재하지 않는 Q&A입니다.");
+            }
+            return qna;
+        }
+        if (qna == null || !SecurityUtil.isSelf(qna.getMember().getEmail())) {
+            throw new AccessDeniedException("본인의 정보만 접근할 수 있습니다.");
+        }
+        return qna;
     }
 
     // 답변 등록/수정 (관리자)

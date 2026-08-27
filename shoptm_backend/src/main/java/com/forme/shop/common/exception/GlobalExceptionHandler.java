@@ -75,7 +75,7 @@ public class GlobalExceptionHandler {
     }
 
     // 로그인은 했지만 본인 소유가 아닌 리소스에 접근할 때
-    // 예: 다른 회원의 주문/장바구니/회원정보를 URL의 id만 바꿔서 접근 시도 (SecurityUtil.checkOwnerOrAdmin)
+    // 예: 다른 회원의 주문/장바구니/회원정보를 URL의 id만 바꿔서 접근 시도 (각 서비스의 findSelfOrAdmin*)
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
     public ResponseEntity<ErrorResponseDto> handleAccessDeniedException(
             org.springframework.security.access.AccessDeniedException ex) {

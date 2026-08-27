@@ -8,6 +8,7 @@ import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.service.MemberService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
@@ -97,11 +98,7 @@ public class BoardService {
     // 게시글 수정
     @Transactional
     public BoardResponseDto updateBoard(Long boardId, BoardRequestDto.Update dto) {
-        Board board = boardRepository.findById(boardId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다."));
-
-        // 본인(또는 관리자) 소유의 게시글만 수정 가능
-        SecurityUtil.checkOwnerOrAdmin(board.getMember().getEmail());
+        Board board = findSelfOrAdminBoard(boardId);
 
         // null 체크 후 값이 있을 때만 수정
         if (dto.getTitle()   != null) board.setTitle(dto.getTitle());
@@ -114,12 +111,26 @@ public class BoardService {
     // 게시글 삭제 (소프트 삭제)
     @Transactional
     public void deleteBoard(Long boardId) {
-        Board board = boardRepository.findById(boardId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다."));
-
-        // 본인(또는 관리자) 소유의 게시글만 삭제 가능
-        SecurityUtil.checkOwnerOrAdmin(board.getMember().getEmail());
+        Board board = findSelfOrAdminBoard(boardId);
 
         board.setIsActive(false);  // 비활성화 처리
+    }
+
+    // "게시글 id로 대상을 찾되, 본인 것이거나 관리자일 때만 결과를 내어준다"를 한 번에 처리한다.
+    // MemberService.findSelfOrAdminMember()와 같은 이유(존재 여부 열거 방지) — 대상을 먼저
+    // 조회해서 없으면 400, 있는데 내 게 아니면 403을 따로 응답하면, 로그인만 한 상태로 남의
+    // boardId를 넣어봤을 때 그 응답 차이만으로 유효한 게시글 id를 하나씩 찾아낼 수 있었다.
+    private Board findSelfOrAdminBoard(Long boardId) {
+        Board board = boardRepository.findById(boardId).orElse(null);
+        if (SecurityUtil.isAdmin()) {
+            if (board == null) {
+                throw new IllegalArgumentException("존재하지 않는 게시글입니다.");
+            }
+            return board;
+        }
+        if (board == null || !SecurityUtil.isSelf(board.getMember().getEmail())) {
+            throw new AccessDeniedException("본인의 정보만 접근할 수 있습니다.");
+        }
+        return board;
     }
 }

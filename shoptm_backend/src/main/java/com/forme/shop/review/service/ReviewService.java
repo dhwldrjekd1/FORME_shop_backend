@@ -10,6 +10,7 @@ import com.forme.shop.review.dto.ReviewResponseDto;
 import com.forme.shop.review.entity.Review;
 import com.forme.shop.review.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -96,11 +97,7 @@ public class ReviewService {
     // 리뷰 수정 (일반회원)
     @Transactional
     public ReviewResponseDto updateReview(Long reviewId, ReviewRequestDto.Update dto) {
-        Review review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 리뷰입니다."));
-
-        // 본인(또는 관리자) 소유의 리뷰만 수정 가능
-        SecurityUtil.checkOwnerOrAdmin(review.getMember().getEmail());
+        Review review = findSelfOrAdminReview(reviewId);
 
         // null 체크 후 값이 있을 때만 수정 (부분 수정 가능)
         if (dto.getRating()  != null) review.setRating(dto.getRating());
@@ -113,13 +110,27 @@ public class ReviewService {
     // 리뷰 삭제 (일반회원 또는 관리자) — hard delete (UNIQUE 제약 때문)
     @Transactional
     public void deleteReview(Long reviewId) {
-        Review review = reviewRepository.findById(reviewId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 리뷰입니다."));
-
-        // 본인(또는 관리자) 소유의 리뷰만 삭제 가능
-        SecurityUtil.checkOwnerOrAdmin(review.getMember().getEmail());
+        Review review = findSelfOrAdminReview(reviewId);
 
         reviewRepository.delete(review);
+    }
+
+    // "리뷰 id로 대상을 찾되, 본인 것이거나 관리자일 때만 결과를 내어준다"를 한 번에 처리한다.
+    // MemberService.findSelfOrAdminMember()와 같은 이유(존재 여부 열거 방지) — 대상을 먼저
+    // 조회해서 없으면 400, 있는데 내 게 아니면 403을 따로 응답하면, 로그인만 한 상태로 남의
+    // reviewId를 넣어봤을 때 그 응답 차이만으로 유효한 리뷰 id를 하나씩 찾아낼 수 있었다.
+    private Review findSelfOrAdminReview(Long reviewId) {
+        Review review = reviewRepository.findById(reviewId).orElse(null);
+        if (SecurityUtil.isAdmin()) {
+            if (review == null) {
+                throw new IllegalArgumentException("존재하지 않는 리뷰입니다.");
+            }
+            return review;
+        }
+        if (review == null || !SecurityUtil.isSelf(review.getMember().getEmail())) {
+            throw new AccessDeniedException("본인의 정보만 접근할 수 있습니다.");
+        }
+        return review;
     }
 
     // 관리자 답글
