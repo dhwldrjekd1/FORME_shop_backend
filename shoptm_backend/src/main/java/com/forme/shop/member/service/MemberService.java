@@ -190,9 +190,18 @@ public class MemberService {
 
     // 관리자 - 회원 강퇴 (소프트 삭제, 탈퇴와 동일한 처리)
     @Transactional
-    public void banMember(Long id) {
+    public void banMember(Long id, String currentPassword) {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
+
+        // 관리자가 "자기 자신의" 계정을 대상으로 이 API를 호출하는 경우엔 현재 비밀번호 확인을
+        // 요구한다 — 이 확인이 없으면, 관리자 세션이 탈취된 상태(XSS, 방치된 브라우저 등)에서
+        // 진짜 비밀번호를 몰라도 이 관리자용 강퇴 API로 자기 자신을 비활성화시킬 수 있었음.
+        // 이건 회원탈퇴(withdraw)에서 막은 것과 정확히 같은 결과(본인 계정 비활성화)를 다른
+        // 엔드포인트로 우회해서 만들어낼 수 있는 경로였다. 다른 회원을 강퇴하는 정상적인
+        // 경우(악성 이용자 강제 탈퇴 등)는 그대로 확인 없이 동작한다.
+        requireCurrentPasswordIfSelf(member, currentPassword);
+
         member.setIsActive(false);  // 비활성화 처리
         member.setDeactivatedAt(LocalDateTime.now());
         // 강퇴는 특히 "지금 당장 접근을 끊어야 하는" 상황이므로, 남은 세션이

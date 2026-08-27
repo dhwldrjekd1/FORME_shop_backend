@@ -82,4 +82,12 @@ public class MemberRequestDto {
     public static class Withdraw {
         private String currentPassword;
     }
+
+    // 관리자 - 회원 강퇴 요청 시 받을 데이터. 관리자가 자기 자신의 계정을 대상으로 강퇴를
+    // 호출할 때만 currentPassword가 필요하고(MemberService.banMember() 참고), 다른 회원을
+    // 강퇴할 땐 필요 없어서 필수(@NotBlank)로 두지 않는다.
+    @Getter @Setter
+    public static class Ban {
+        private String currentPassword;
+    }
 }

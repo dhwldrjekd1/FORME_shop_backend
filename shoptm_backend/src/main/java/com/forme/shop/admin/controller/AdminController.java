@@ -2,6 +2,7 @@ package com.forme.shop.admin.controller;
 
 import com.forme.shop.admin.dto.DashboardResponseDto;
 import com.forme.shop.admin.service.AdminService;
+import com.forme.shop.member.dto.MemberRequestDto;
 import com.forme.shop.member.dto.MemberResponseDto;
 import com.forme.shop.member.service.MemberService;
 import lombok.RequiredArgsConstructor;
@@ -48,9 +49,12 @@ public class AdminController {
 
     // 관리자 - 회원 강퇴
     // PATCH /api/admin/members/{id}/ban
+    // body는 선택 — 다른 회원을 강퇴할 땐 안 보내도 됨(MemberService 참고)
     @PatchMapping("/members/{id}/ban")
-    public ResponseEntity<Void> banMember(@PathVariable Long id) {
-        memberService.banMember(id);
+    public ResponseEntity<Void> banMember(
+            @PathVariable Long id,
+            @RequestBody(required = false) MemberRequestDto.Ban dto) {
+        memberService.banMember(id, dto != null ? dto.getCurrentPassword() : null);
         return ResponseEntity.noContent().build();
     }
 
