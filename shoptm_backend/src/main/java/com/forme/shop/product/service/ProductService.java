@@ -134,11 +134,21 @@ public class ProductService {
     @Transactional
     public ProductResponseDto createProduct(ProductRequestDto.Create dto,
                                             List<MultipartFile> images) throws IOException {
-        // categoryId가 없으면 첫 번째 카테고리 사용
-        Long catId = dto.getCategoryId() != null ? dto.getCategoryId() : 1L;
-        Category category = categoryRepository.findById(catId)
-                .orElseGet(() -> categoryRepository.findAll().stream().findFirst()
-                        .orElseThrow(() -> new IllegalArgumentException("카테고리가 없습니다. 먼저 카테고리를 등록해주세요.")));
+        // categoryId를 명시적으로 보냈는데 존재하지 않으면(오타, 이미 삭제된 카테고리 등) 조용히
+        // 다른 카테고리로 대체하지 않고 바로 실패시킨다 — 예전엔 존재하지 않는 categoryId를
+        // findById 뒤 orElseGet으로 "테이블의 아무 카테고리나 첫 번째 것"(순서 보장 없음, 심지어
+        // 비활성/숨김 카테고리 포함)으로 조용히 대체해서, 관리자가 의도하지 않은 카테고리에
+        // 상품이 등록돼도 아무 에러 없이 그대로 저장됐음. categoryId를 아예 안 보냈을 때만
+        // 노출 순서상 첫 번째 활성 카테고리를 기본값으로 쓴다(updateProduct와 동일한 기준).
+        Category category;
+        if (dto.getCategoryId() != null) {
+            category = categoryRepository.findById(dto.getCategoryId())
+                    .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
+        } else {
+            category = categoryRepository.findByIsActiveTrueOrderBySortOrderAsc().stream()
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException("카테고리가 없습니다. 먼저 카테고리를 등록해주세요."));
+        }
 
         // 이미지 처리: dto에 URL이 있으면 우선 사용, 없으면 파일 업로드
         String imageUrl = dto.getImageUrl();

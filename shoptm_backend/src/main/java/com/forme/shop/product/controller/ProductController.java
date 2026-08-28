@@ -84,18 +84,11 @@ public class ProductController {
 
     // 상품 수정 (관리자) - 다중 이미지 업로드
     @PutMapping("/admin/products/{id}")
-    public ResponseEntity<?> updateProduct(
+    public ResponseEntity<ProductResponseDto> updateProduct(
             @PathVariable Long id,
             @RequestPart ProductRequestDto.Update dto,
-            @RequestPart(required = false) List<MultipartFile> images) {
-        try {
-            return ResponseEntity.ok(productService.updateProduct(id, dto, images));
-        } catch (Exception e) {
-            log.error("상품 수정 실패", e);
-            return ResponseEntity.status(500).body(java.util.Map.of(
-                "message", "상품 수정에 실패했습니다."
-            ));
-        }
+            @RequestPart(required = false) List<MultipartFile> images) throws IOException {
+        return ResponseEntity.ok(productService.updateProduct(id, dto, images));
     }
 
     // 상품 삭제 (관리자)
