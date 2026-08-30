@@ -1,8 +1,10 @@
 package com.forme.shop.product.dto;
 
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -15,6 +17,11 @@ public class ProductRequestDto {
     @Getter @Setter
     public static class SizeStock {
         private String size;    // XS, S, M, L, XL, XXL, 28, 30 등
+
+        // 사이즈별 재고 합계가 상품 전체 stock으로 그대로 대체되므로(ProductService 참고),
+        // 여기를 검증하지 않으면 Create/Update의 stock @Min(0)을 그대로 우회해 음수 재고가
+        // 저장될 수 있었음.
+        @Min(value = 0, message = "재고는 0개 이상이어야 합니다.")
         private Integer stock;  // 해당 사이즈 재고
     }
 
@@ -56,6 +63,7 @@ public class ProductRequestDto {
         private String composition;     // 줄바꿈 구분
 
         // 사이즈별 재고 [{ "size": "M", "stock": 10 }, ...]
+        @Valid
         private java.util.List<SizeStock> sizeStocks;
 
         private Boolean isNew       = false;  // 신상품 여부
@@ -69,9 +77,16 @@ public class ProductRequestDto {
     @Getter @Setter
     public static class Update {
         private Long categoryId;
+
+        @Pattern(regexp = "(?sU).*\\S.*", message = "상품명을 입력해주세요.")
         private String name;
+
         private String description;
+
+        @Min(value = 0, message = "가격은 0원 이상이어야 합니다.")
         private Integer price;
+
+        @Min(value = 0, message = "재고는 0개 이상이어야 합니다.")
         private Integer stock;
         private String category;
         private String size;
@@ -86,6 +101,7 @@ public class ProductRequestDto {
         private String colorHex;
         private String features;
         private String composition;
+        @Valid
         private java.util.List<SizeStock> sizeStocks;
         private String status;
         private Boolean isNew;

@@ -1,6 +1,7 @@
 package com.forme.shop.qna.dto;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -26,8 +27,12 @@ public class QnaRequestDto {
     // 수정할 항목만 보내면 되므로 선택 입력
     @Getter @Setter
     public static class Update {
+        @Pattern(regexp = "(?sU).*\\S.*", message = "제목을 입력해주세요.")
         private String title;          // 수정할 제목 (선택)
+
+        @Pattern(regexp = "(?sU).*\\S.*", message = "내용을 입력해주세요.")
         private String content;        // 수정할 내용 (선택)
+
         private Boolean isSecret;      // 비밀글 여부 변경 (선택)
     }
 

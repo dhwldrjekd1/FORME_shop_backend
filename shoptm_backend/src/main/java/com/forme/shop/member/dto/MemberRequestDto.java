@@ -57,7 +57,16 @@ public class MemberRequestDto {
         // 없는 공백(U+00A0, 복사-붙여넣기에서 흔함)만으로 된 이름을 걸러내지 못한다.
         @Pattern(regexp = "(?sU).*\\S.*", message = "이름을 입력해주세요.")
         private String name;
+
+        // phone은 Register(가입)에서도 애초에 필수가 아니라(@NotBlank 없음) 실제로 빈 값으로
+        // 남아있는 계정이 있을 수 있다 — 마이페이지(MyPageView.vue)가 저장할 때마다 폼의 현재
+        // phone 값을 그대로 다시 보내므로(전화번호를 등록한 적 없으면 빈 문자열), 여기에 공백
+        // 거부를 걸면 그런 회원이 이름 등 다른 항목만 바꾸려 해도 요청 전체가 실패한다.
         private String phone;
+
+        // address는 phone과 달리 마이페이지 저장 요청에 아예 포함되지 않는(그 화면에 입력
+        // UI 자체가 없음) 필드라 이 문제가 없다 — name과 동일하게 "보냈는데 공백뿐임"만 거른다.
+        @Pattern(regexp = "(?sU).*\\S.*", message = "주소를 입력해주세요.")
         private String address;
 
         // 가입 시(Register.password)와 동일한 최소 길이를 요구한다. 예전엔 여기에 검증이
@@ -72,6 +81,12 @@ public class MemberRequestDto {
 
         private Double height;
         private Double weight;
+
+        // fit은 Register에서도 실제로는 필수 검증이 없지만(주석만 "필수"), 마이페이지에서는
+        // 항상 고정된 값(slim/standard/wide) 중 하나를 고르는 버튼으로만 바뀌고 초기값도
+        // "standard"로 채워져 있어(MyPageView.vue) 공백으로 전송될 일이 없다 — phone과 달리
+        // 실제로 빈 문자열이 저장돼 있을 걱정이 없으므로 공백 거부를 적용한다.
+        @Pattern(regexp = "(?sU).*\\S.*", message = "핏을 선택해주세요.")
         private String fit;
     }
 

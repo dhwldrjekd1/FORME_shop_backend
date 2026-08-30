@@ -37,7 +37,7 @@ public class FaqController {
     @PutMapping("/admin/faq/{faqId}")
     public ResponseEntity<FaqResponseDto> updateFaq(
             @PathVariable Long faqId,
-            @RequestBody FaqRequestDto.Update dto) {
+            @Valid @RequestBody FaqRequestDto.Update dto) {
         return ResponseEntity.ok(faqService.updateFaq(faqId, dto));
     }
 

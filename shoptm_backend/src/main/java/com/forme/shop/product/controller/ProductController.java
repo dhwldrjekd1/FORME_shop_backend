@@ -86,7 +86,7 @@ public class ProductController {
     @PutMapping("/admin/products/{id}")
     public ResponseEntity<ProductResponseDto> updateProduct(
             @PathVariable Long id,
-            @RequestPart ProductRequestDto.Update dto,
+            @Valid @RequestPart ProductRequestDto.Update dto,
             @RequestPart(required = false) List<MultipartFile> images) throws IOException {
         return ResponseEntity.ok(productService.updateProduct(id, dto, images));
     }

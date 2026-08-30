@@ -33,6 +33,7 @@ public class ReviewRequestDto {
         @Max(value = 5, message = "별점은 5점 이하여야 합니다.")
         private Integer rating;    // 수정할 별점 (선택)
 
+        @Pattern(regexp = "(?sU).*\\S.*", message = "리뷰 내용을 입력해주세요.")
         private String content;    // 수정할 내용 (선택)
     }
 }

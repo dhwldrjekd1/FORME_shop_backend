@@ -62,7 +62,7 @@ public class QnaController {
     @PutMapping("/qna/{qnaId}")
     public ResponseEntity<QnaResponseDto> updateQna(
             @PathVariable Long qnaId,
-            @RequestBody QnaRequestDto.Update dto) {
+            @Valid @RequestBody QnaRequestDto.Update dto) {
         return ResponseEntity.ok(qnaService.updateQna(qnaId, dto));
     }
 

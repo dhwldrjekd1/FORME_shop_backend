@@ -47,7 +47,7 @@ public class ReviewController {
     @PutMapping("/reviews/{reviewId}")
     public ResponseEntity<ReviewResponseDto> updateReview(
             @PathVariable Long reviewId,
-            @RequestBody ReviewRequestDto.Update dto) {
+            @Valid @RequestBody ReviewRequestDto.Update dto) {
         return ResponseEntity.ok(reviewService.updateReview(reviewId, dto));
     }
 
