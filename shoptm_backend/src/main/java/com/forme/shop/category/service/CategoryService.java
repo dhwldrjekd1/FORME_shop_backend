@@ -35,10 +35,18 @@ public class CategoryService {
                 .collect(Collectors.toList());
     }
 
-    // 카테고리 단건 조회
+    // 카테고리 단건 조회 (일반회원 — GET /api/categories/{id}는 SecurityConfig에서 permitAll)
     public CategoryResponseDto getCategory(Long id) {
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
+
+        // 삭제(비활성화)된 카테고리 접근 차단 — ProductService.getProduct()와 동일한 이유.
+        // 이게 없으면 관리자가 카테고리를 숨겨도 id를 아는(또는 순차 추측하는) 누구나 이
+        // 공개 라우트로 비활성 카테고리의 이름·설명을 계속 조회할 수 있었음. 관리자 화면은
+        // 이 메서드를 쓰지 않고 getAllCategories()(비활성 포함)를 따로 쓰므로 영향 없음.
+        if (!category.getIsActive()) {
+            throw new IllegalArgumentException("삭제된 카테고리입니다.");
+        }
         return CategoryResponseDto.from(category);
     }
 
