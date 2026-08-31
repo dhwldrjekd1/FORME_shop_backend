@@ -209,9 +209,23 @@ public class MemberService {
         tokenBlacklistService.revokeAllForEmail(member.getEmail());
     }
 
-    // 관리자 - 회원 등급 변경 (BRONZE / SILVER / GOLD)
+    // OrderService.getGradeDiscount()/updateMemberGrade()가 실제로 인식하는 등급과 동일하게
+    // 맞춘 화이트리스트. 여기 없는 값은 등급 할인 계산에서 전부 "할인 없음"으로 취급되므로,
+    // 검증 없이 그대로 저장하면 관리자가 오타(예: "GOId")를 내도 400 에러 없이 그 값이 저장된
+    // 채로 남아있다가, 다음 주문의 등급 자동 재계산 시점에야 조용히 정상화되는 문제가 있었음.
+    private static final java.util.Set<String> VALID_GRADES = java.util.Set.of(
+            "BRONZE", "SILVER", "GOLD", "VIP");
+
+    // 관리자 - 회원 등급 변경 (BRONZE / SILVER / GOLD / VIP)
     @Transactional
     public void changeGrade(Long id, String grade) {
+        // Set.of(...).contains(null)은 false가 아니라 NPE를 던지므로(불변 컬렉션이 null 인자
+        // 자체를 거부함) null도 먼저 걸러야 한다 — 지금은 @RequestParam String grade가 필수라
+        // API로는 null이 들어올 수 없지만, 이 메서드를 다른 경로(내부 호출 등)에서도 안전하게
+        // 쓸 수 있도록 방어한다.
+        if (grade == null || !VALID_GRADES.contains(grade)) {
+            throw new IllegalArgumentException("올바르지 않은 등급입니다.");
+        }
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
         member.setGrade(grade);
