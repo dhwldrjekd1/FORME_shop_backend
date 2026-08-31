@@ -1,7 +1,10 @@
 package com.forme.shop.member.dto;
 
+import jakarta.validation.constraints.DecimalMax;
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.Getter;
@@ -27,8 +30,21 @@ public class MemberRequestDto {
         private String name;
         private String phone;
         private String address;
+
+        // 주석엔 "필수"라고 돼 있었지만 정작 검증 애노테이션이 없어서, 프론트(SignupView.vue)는
+        // 이미 키 100~250cm·몸무게 30~200kg으로 막고 있는데도 API를 직접 호출하면 이 범위를
+        // 벗어나거나 아예 없는 값으로도 가입이 그대로 통과했음. 프론트의 검증 범위와 동일하게 맞춤.
+        @NotNull(message = "키를 입력해주세요.")
+        @DecimalMin(value = "100", message = "키는 100cm 이상이어야 합니다.")
+        @DecimalMax(value = "250", message = "키는 250cm 이하여야 합니다.")
         private Double height;     // 키 (cm) - 필수
+
+        @NotNull(message = "몸무게를 입력해주세요.")
+        @DecimalMin(value = "30", message = "몸무게는 30kg 이상이어야 합니다.")
+        @DecimalMax(value = "200", message = "몸무게는 200kg 이하여야 합니다.")
         private Double weight;     // 몸무게 (kg) - 필수
+
+        @NotBlank(message = "선호 핏을 선택해주세요.")
         private String fit;        // 선호 핏 (slim, standard, wide) - 필수
     }
 
