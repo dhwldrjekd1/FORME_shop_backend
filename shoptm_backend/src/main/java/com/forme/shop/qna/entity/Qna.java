@@ -40,12 +40,6 @@ public class Qna {
     @JoinColumn(name = "product_id")
     private Product product;
 
-    // 답변한 관리자
-    // NULL = 아직 답변 안 함
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "answered_by")
-    private Member answeredBy;
-
     @Column(nullable = false, length = 200)
     private String title;          // 질문 제목
 

@@ -55,8 +55,4 @@ public class WishlistService {
 
         wishlistRepository.deleteByMemberIdAndProductId(memberId, productId);
     }
-
-    public boolean isWished(Long memberId, Long productId) {
-        return wishlistRepository.existsByMemberIdAndProductId(memberId, productId);
-    }
 }

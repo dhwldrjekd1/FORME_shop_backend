@@ -60,9 +60,6 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @EntityGraph(attributePaths = {"category", "sizes"})
     List<Product> findByIsRecommendTrueAndIsActiveTrueOrderByIdAsc();
 
-    // 브랜드별 추천 상품 존재 여부 확인
-    boolean existsByBrandAndIsRecommendTrueAndIsActiveTrue(String brand);
-
     // 브랜드별 추천 상품 조회 (추천 해제용)
     List<Product> findByBrandAndIsRecommendTrueAndIsActiveTrue(String brand);
 }

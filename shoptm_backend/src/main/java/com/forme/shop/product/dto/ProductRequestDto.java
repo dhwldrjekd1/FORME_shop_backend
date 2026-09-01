@@ -8,9 +8,6 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
-import java.math.BigDecimal;
-import java.util.List;
-
 public class ProductRequestDto {
 
     // 사이즈별 재고 DTO
@@ -47,7 +44,12 @@ public class ProductRequestDto {
         @Min(value = 0, message = "재고는 0개 이상이어야 합니다.")
         private Integer stock;
 
-        private String category;     // 선택 입력
+        // 서버는 이 값을 읽지 않고 categoryId만 쓰지만, 프론트(AdminProducts.vue)가 여전히
+        // 이 키를 요청 바디에 실어 보낸다 — Jackson의 FAIL_ON_UNKNOWN_PROPERTIES가 기본값
+        // (Spring Boot도 별도 설정 없이는 끄지 않음)이라, 필드를 지우면 모르는 JSON 필드로
+        // 걸려 상품 등록/수정 요청 자체가 400으로 전부 실패한다. 실제로 쓰이진 않아도 지우면
+        // 안 되는 필드(죽은 코드 정리 중 교차검증에서 발견).
+        private String category;     // 선택 입력 (미사용 — categoryId로 대체됨)
         private String size;         // 사이즈 (S, M, L, XL, FREE 등)
         private String gender;       // 성별 (남성, 여성, 공용)
         private String brand;        // 브랜드 (BEANPOLE, CARHARTT 등)
@@ -88,7 +90,10 @@ public class ProductRequestDto {
 
         @Min(value = 0, message = "재고는 0개 이상이어야 합니다.")
         private Integer stock;
-        private String category;
+
+        // Create.category와 동일한 이유로 유지 — 프론트가 수정 요청에도 이 키를 그대로 실어
+        // 보내므로, 미사용이어도 지우면 Jackson이 모르는 필드로 걸려 요청 전체가 400으로 실패함.
+        private String category;     // 선택 입력 (미사용 — categoryId로 대체됨)
         private String size;
         private String gender;
         private String brand;
@@ -103,7 +108,6 @@ public class ProductRequestDto {
         private String composition;
         @Valid
         private java.util.List<SizeStock> sizeStocks;
-        private String status;
         private Boolean isNew;
         private Boolean isBest;
     }

@@ -68,9 +68,6 @@ public class Orders {
     @Column(nullable = false)
     private String address;        // 배송 주소
 
-    @Column(length = 255)
-    private String memo;           // 배송 메모 (ex: 문 앞에 놓아주세요)
-
     @Column
     private LocalDateTime paidAt;  // 결제 완료 시간 (결제 전은 NULL)
 

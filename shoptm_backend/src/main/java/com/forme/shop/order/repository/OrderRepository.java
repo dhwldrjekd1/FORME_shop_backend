@@ -51,8 +51,4 @@ public interface OrderRepository extends JpaRepository<Orders, Long> {
             "LEFT JOIN FETCH oi.product " +
             "ORDER BY o.createdAt DESC")
     List<Orders> findAllWithDetailsOrderByCreatedAtDesc();
-
-    // SELECT * FROM orders WHERE status = ?
-    // 관리자 - 상태별 주문 목록 조회 (배송관리 등)
-    List<Orders> findByStatus(String status);
 }

@@ -16,7 +16,6 @@ public class BoardResponseDto {
     private String title;          // 게시글 제목
     private String content;        // 게시글 내용
     private Integer views;         // 조회수
-    private Integer totalRevenue;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
 

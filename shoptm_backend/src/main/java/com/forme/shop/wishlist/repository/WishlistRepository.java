@@ -19,7 +19,6 @@ public interface WishlistRepository extends JpaRepository<Wishlist, Long> {
     // addWishlist()가 upsert 직후 응답 조립에 쓰는 단건 조회라 위와 같은 이유로 EntityGraph 필요
     @EntityGraph(attributePaths = {"product", "product.category"})
     Optional<Wishlist> findByMemberIdAndProductId(Long memberId, Long productId);
-    boolean existsByMemberIdAndProductId(Long memberId, Long productId);
     void deleteByMemberIdAndProductId(Long memberId, Long productId);
 
     // 이미 찜한 상품이면 조용히 무시하고(DO NOTHING) 없으면 새로 담는 원자적 upsert.

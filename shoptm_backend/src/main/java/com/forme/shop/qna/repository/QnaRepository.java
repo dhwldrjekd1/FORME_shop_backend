@@ -23,9 +23,4 @@ public interface QnaRepository extends JpaRepository<Qna, Long> {
     // 특정 상품의 Q&A 최신순 조회
     @EntityGraph(attributePaths = {"member", "product"})
     List<Qna> findByProductIdAndIsActiveTrueOrderByCreatedAtDesc(Long productId);
-
-    // SELECT * FROM qna WHERE status = ? AND is_active = true
-    // 관리자 - 미답변 Q&A 목록 조회
-    @EntityGraph(attributePaths = {"member", "product"})
-    List<Qna> findByStatusAndIsActiveTrue(String status);
 }

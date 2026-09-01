@@ -14,8 +14,6 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.Map;
 
-import java.util.List;
-
 @RestController               // @Controller + @ResponseBody: JSON 형태로 응답 반환
 @RequestMapping("/api")       // 이 컨트롤러의 모든 URL 앞에 /api 붙음
 @RequiredArgsConstructor      // Lombok: final 필드 생성자 주입 자동 처리
