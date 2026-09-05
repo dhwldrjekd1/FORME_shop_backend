@@ -90,7 +90,12 @@ public class OrderService {
         // 결제 금액 검증은 클라이언트가 요청 본문에 실어 보낸 paidAmount가 아니라,
         // 결제 승인 시점에 서버가 이미 저장해 둔 진짜 승인 금액(Payment.amount)을 기준으로 한다.
         // (그렇지 않으면 실제로는 소액만 결제한 뒤 paidAmount만 크게 조작해 보내는 위변조가 가능함)
-        Integer paidAmount = paymentConfirmed ? claimedPayment.getAmount() : dto.getPaidAmount();
+        // paymentKey가 없어(=결제를 거치지 않아) claimedPayment가 없는 경우 dto.getPaidAmount()를
+        // 그대로 쓰면, 결제를 전혀 하지 않고도 paidAmount만 totalPrice와 맞춰 보내는 것만으로
+        // 바로 PAID 처리가 가능했다(프런트는 이 조합을 쓰지 않지만 API를 직접 호출하면 가능했음).
+        // 그래서 결제가 확인되지 않은 경우 클라이언트 값은 아예 무시하고 null로 취급 —
+        // 이 경우 주문은 항상 PENDING(결제 없는 데모 주문)으로만 생성된다.
+        Integer paidAmount = paymentConfirmed ? claimedPayment.getAmount() : null;
 
         Orders savedOrders;
         try {

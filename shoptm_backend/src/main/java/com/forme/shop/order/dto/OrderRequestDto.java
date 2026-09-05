@@ -26,9 +26,10 @@ public class OrderRequestDto {
         @NotBlank(message = "배송 주소를 입력해주세요.")
         private String address;            // 배송 주소
 
-        // 토스페이먼츠로 결제를 이미 완료한 경우, 실제 승인된 결제 금액
-        // null이면 결제 없는 데모 주문(PENDING) — 값이 있으면 서버가 계산한 totalPrice와
-        // 반드시 일치해야만 주문이 생성되고, 일치 시 즉시 PAID 처리됨 (OrderService.createOrder)
+        // 참고용 — 실제 PAID 판정에는 쓰이지 않는다. paymentKey로 서버가 확인한 결제가 있을
+        // 때만 그 결제의 실제 승인 금액(Payment.amount)을 기준으로 PAID 처리하며, 이 필드값은
+        // 그때도 무시된다. paymentKey 없이 이 값만 보내는 것으로는 주문이 PAID가 될 수 없고
+        // 항상 PENDING(결제 없는 데모 주문)으로 생성된다 (OrderService.createOrder)
         private Integer paidAmount;
 
         // 토스 결제 승인(confirm) 시 발급된 paymentKey — 있으면 주문 생성 실패 시
