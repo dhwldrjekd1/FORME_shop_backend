@@ -19,6 +19,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -312,6 +314,58 @@ public class OrderService {
         }
 
         restoreStock(orderId, items);
+        // status가 "PAID"였다고 해서 실제로 결제된 게 보장되진 않는다 — 관리자가
+        // updateOrderStatus로 결제 없이도 상태만 "PAID"로 바꿔놓을 수 있고, 그 경로는 paidAt을
+        // 세팅하지 않는다. 그래서 status 문자열이 아니라 paidAt이 실제로 찍혀있는지로 판단한다.
+        refundIfPaidByToss(orderId, orders.getPaidAt() != null, "회원 요청에 의한 주문 취소");
+    }
+
+    // 실제 토스 결제로 대금을 받은 주문이었다면 취소 시 그 결제를 환불한다. 재고 복구까지 이미
+    // 확정된 뒤에 호출해야 하며, 환불 API 호출 자체가 실패하더라도(네트워크 오류 등) 이미 정상
+    // 처리된 주문 취소를 되돌리지 않는다 — PaymentService 쪽에 REFUND_FAILED로 남아 수동 확인
+    // 대상이 될 뿐, 여기서 예외를 던져 취소 자체를 실패로 만들면 안 된다.
+    // wasPaid: 취소되기 직전 이 주문에 실제로 결제(paidAt)가 있었는지 — PENDING(결제 없는 데모
+    // 주문)이 취소되는 경우엔 애초에 연결된 결제가 없는 게 정상이라 구분이 필요함(PaymentService
+    // 참고).
+    // 환불(토스 취소 API 호출)은 되돌릴 수 없는데, 이 시점은 아직 주문 취소 자체를 담은 바깥
+    // 트랜잭션이 커밋되기 전이다. 여기서 바로 환불을 실행하면(REQUIRES_NEW라 즉시 독립적으로
+    // 커밋됨) 바깥 트랜잭션이 이후 어떤 이유로든 커밋에 실패해 롤백될 경우 "주문은 그대로
+    // PAID인데 환불은 이미 나간" 상태가 생길 수 있다. 그래서 실제 환불 호출은 바깥 트랜잭션이
+    // 실제로 커밋된 뒤에만 실행되도록 등록해둔다.
+    // 다만 afterCommit 콜백은 순전히 메모리 안에서만 예약돼있는 것이라, 바깥 트랜잭션이 커밋된
+    // 바로 그 직후 ~ 이 콜백이 실제로 실행되기 전 사이에 프로세스가 죽으면(배포 재시작, OOM 등)
+    // 이 콜백 자체가 통째로 사라져 "환불해야 하는데 그 사실 자체가 어디에도 안 남는" 상황이
+    // 생길 수 있다. 그래서 실제 환불 시도 전에, 주문 취소를 커밋하는 바로 그 트랜잭션 안에서
+    // 먼저 연결된 결제를 "환불 대기중"으로 표시해 커밋해둔다 — 최악의 경우(콜백 자체가 못
+    // 돌아도) 이 상태가 DB에 남아있어 나중에라도 찾아 수동으로 처리할 수 있다.
+    private void refundIfPaidByToss(Long orderId, boolean wasPaid, String reason) {
+        // 결제 없이 생성된 데모 주문(PENDING) 취소는 애초에 환불할 것도, 대기중으로 표시해둘
+        // 것도 없다 — 커밋 후 별도 트랜잭션을 여는 콜백 자체를 등록하지 않아 그 오버헤드도 없앤다.
+        if (!wasPaid) return;
+
+        // 이 표시 자체가(DB 순간 오류 등으로) 실패하더라도 절대로 이미 성공한 주문 취소 자체를
+        // 롤백시키면 안 된다 — "환불 대기중 표시"는 뒤이은 실제 환불 시도를 더 안전하게 만들기
+        // 위한 보조 장치일 뿐, 이것 때문에 정상적인 취소 요청이 실패해선 안 된다. 이게 실패하면
+        // 어차피 곧바로 이어지는 afterCommit의 실제 환불 시도(및 그 성패 로그)가 여전히 최소한의
+        // 안전망 역할을 한다.
+        try {
+            paymentService.markRefundPendingForOrder(orderId);
+        } catch (Exception e) {
+            log.error("환불 대기중 표시 실패 (orderId={}) — 주문 취소 자체는 정상 진행됨", orderId, e);
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    boolean refunded = paymentService.refundForCancellation(orderId, wasPaid, reason);
+                    if (!refunded) {
+                        log.error("주문 취소는 정상 처리됐으나 환불에 실패해 수동 확인이 필요함 (orderId={})", orderId);
+                    }
+                } catch (Exception e) {
+                    log.error("주문 취소 환불 처리 중 오류 (orderId={})", orderId, e);
+                }
+            }
+        });
     }
 
     // 취소된 주문의 상품별 재고를 원자적으로 복구한다. 조회 후 다시 쓰는 방식이면 같은
@@ -358,9 +412,16 @@ public class OrderService {
             // 상태변경 요청이 동시에 여러 번 들어와도(관리자 이중클릭, 회원 취소와 겹침 등)
             // 실제로 전이시킨 단 하나의 요청만 재고를 복구하도록 한다.
             List<OrderItem> items = new ArrayList<>(orders.getOrderItems());
+            // 원자적 UPDATE(cancelIfNotCancelled)로 실제 상태를 바꾸기 전, 이 주문이 결제된 적이
+            // 있었는지를 미리 기억해둔다. 현재 status가 "PAID"인지가 아니라 paidAt이 찍혀있는지로
+            // 판단해야 한다 — PAID 이후 PREPARING/SHIPPED 등으로 더 진행된 주문을 관리자가 취소할
+            // 수도 있는데, 그 경우 현재 status는 더 이상 "PAID"가 아니지만 결제는 분명히 됐던
+            // 것이므로 여전히 환불 대상이다. PENDING(결제 없는 데모 주문)만 paidAt이 비어있다.
+            boolean wasPaid = orders.getPaidAt() != null;
             int updated = orderRepository.cancelIfNotCancelled(orderId);
             if (updated > 0) {
                 restoreStock(orderId, items);
+                refundIfPaidByToss(orderId, wasPaid, "관리자에 의한 주문 취소");
             }
         } else {
             // 이 전이도 CANCELLED가 아닌 주문에서만 원자적으로 적용한다 — 그렇지 않으면

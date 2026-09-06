@@ -18,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -125,9 +126,59 @@ public class PaymentService {
     public boolean refundAndMarkFailed(String paymentKey, String reason) {
         Payment payment = paymentRepository.findByPaymentKey(paymentKey).orElse(null);
         if (payment == null) return true; // 승인 기록 자체가 없으면 환불할 결제도 없음
+        return callTossCancelAndMark(payment, "주문 생성 실패로 인한 자동 취소", reason);
+    }
 
+    // 주문 취소를 커밋하는 바로 그 트랜잭션 안에서 호출해야 한다(별도 트랜잭션이 아님 — 이
+    // 메서드 자체엔 일부러 @Transactional을 안 붙여서, 호출한 쪽의 진행 중인 트랜잭션에 자연스럽게
+    // 합류해 그 트랜잭션과 함께 원자적으로 커밋/롤백되게 함). 연결된 결제를 "환불 대기중"으로
+    // 미리 표시해 두는 용도로, 실제 토스 취소 API 호출(refundForCancellation, 커밋 후 별도 호출)
+    // 자체가 프로세스 종료 등으로 아예 실행되지 못하더라도 "환불이 필요한 상태"라는 사실만은
+    // 주문 취소와 함께 이미 DB에 남아 유실되지 않도록 하기 위함 (PaymentRepository 참고).
+    public void markRefundPendingForOrder(Long orderId) {
+        paymentRepository.markRefundPendingForOrder(orderId);
+    }
+
+    // PAID 상태였던 주문이 취소(회원 본인 취소 또는 관리자의 상태 변경)됐을 때, 실제로 결제된
+    // 돈을 토스 취소 API로 환불한다. 이전에는 주문 취소 시 재고만 복구하고 결제 자체는 그대로
+    // 남아있어, 취소된 주문의 카드 대금이 고객에게 돌아가지 않는 문제가 있었다.
+    // REQUIRES_NEW인 이유는 refundAndMarkFailed와 동일 — 이 메서드는 반드시 주문의 상태 전이
+    // (취소 처리)와 재고 복구가 이미 확정된 뒤에 호출해야 한다. 그래야 최악의 경우(이 환불 호출
+    // 자체가 실패하더라도) "주문은 취소 안 됐는데 재고만 복구됨" 같은 반쪽짜리 상태가 아니라,
+    // "주문 취소는 정상 처리됐고 환불만 실패해 수동 확인이 필요함"으로 한정된다.
+    // 결제 없이 생성된 데모 주문(PENDING이었다가 취소되는 경우) 취소는 연결된 Payment가 없는 게
+    // 정상이므로 조용히 스킵한다. 반대로 wasPaid가 true인데도 연결된 Payment를 못 찾으면(주문
+    // 생성 시 markLinked가 드물게 실패해 결제-주문 연결이 아예 안 남아있던 경우 — OrderService의
+    // createOrder 주석 참고) 실제로는 결제가 됐는데 자동으로 환불할 방법이 없는 상황이므로,
+    // 조용히 "환불 불필요"로 넘기지 않고 실패로 보고해 수동 확인 대상이 되게 한다.
+    // order_id에 DB 유니크 제약이 없어(PaymentRepository 참고) 한 주문에 결제가 이론적으로
+    // 둘 이상 연결될 수도 있으므로, 하나만 골라 처리하고 끝내지 않고 연결된 결제 전부를 각각
+    // 환불 시도한 뒤 하나라도 실패하면 전체를 실패로 보고한다(일부만 조용히 누락되지 않게).
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public boolean refundForCancellation(Long orderId, boolean wasPaid, String reason) {
+        List<Payment> payments = paymentRepository.findByOrders_Id(orderId);
+        if (payments.isEmpty()) {
+            if (wasPaid) {
+                log.error("결제 완료 상태였던 주문이 취소됐는데 연결된 결제 기록을 찾지 못함 — " +
+                        "수동으로 토스 결제 내역을 확인해 환불이 필요합니다 (orderId={})", orderId);
+                return false;
+            }
+            return true; // 결제 없는 데모 주문이었던 것 — 환불할 것도 없음(정상)
+        }
+        boolean allSucceeded = true;
+        for (Payment payment : payments) {
+            if (!callTossCancelAndMark(payment, "주문 취소로 인한 환불", reason)) {
+                allSucceeded = false;
+            }
+        }
+        return allSucceeded;
+    }
+
+    // 토스 결제 취소(환불) API를 실제로 호출하고, 결과에 따라 Payment 상태를 갱신한다.
+    // refundAndMarkFailed(주문 생성 실패)와 refundForCancellation(주문 취소)이 공통으로 쓴다.
+    private boolean callTossCancelAndMark(Payment payment, String tossCancelReason, String storedReason) {
         // 이미 환불 처리(성공/실패)가 끝난 결제면 다시 취소 API를 부르지 않는다.
-        // (동시에 실패한 두 요청이 같은 결제를 동시에 환불 처리하려는 경우, 두 번째 호출이
+        // (동시에 들어온 두 요청이 같은 결제를 동시에 환불 처리하려는 경우, 두 번째 호출이
         // 이미 성공한 REFUNDED 상태를 REFUND_FAILED로 잘못 덮어쓰는 걸 방지)
         if (TERMINAL_STATUSES.contains(payment.getStatus())) {
             return "REFUNDED".equals(payment.getStatus());
@@ -140,21 +191,32 @@ public class PaymentService {
             headers.setContentType(MediaType.APPLICATION_JSON);
             headers.set("Authorization", "Basic " + encodedKey);
 
-            Map<String, Object> body = Map.of("cancelReason", "주문 생성 실패로 인한 자동 취소");
+            Map<String, Object> body = Map.of("cancelReason", tossCancelReason);
 
             restTemplate.postForEntity(
-                    "https://api.tosspayments.com/v1/payments/" + paymentKey + "/cancel",
+                    "https://api.tosspayments.com/v1/payments/" + payment.getPaymentKey() + "/cancel",
                     new HttpEntity<>(body, headers),
                     Map.class
             );
             payment.setStatus("REFUNDED");
-            payment.setFailReason(reason);
+            payment.setFailReason(truncateToColumn(storedReason));
             return true;
         } catch (Exception e) {
-            log.error("결제 자동 환불 실패 - paymentKey={}, reason={}", paymentKey, reason, e);
+            log.error("결제 자동 환불 실패 - paymentKey={}, reason={}", payment.getPaymentKey(), storedReason, e);
             payment.setStatus("REFUND_FAILED");
-            payment.setFailReason(reason + " / 자동 환불 시도도 실패: " + e.getMessage());
+            // 실패 사유는 사람이 나중에 DB를 보고 원인을 가늠하라고 남기는 참고용 텍스트일 뿐이라,
+            // 길이를 줄여도 정보 손실의 실질적 피해가 없다. 반면 여기서 컬럼 길이(255)를 넘겨
+            // 이 INSERT/UPDATE 자체가 실패하면, 환불 실패라는 사실 자체를 기록할 방법이 없어져
+            // "환불도 안 됐는데 실패 기록도 없는" 최악의 상태가 된다 — 그걸 막기 위한 자름.
+            payment.setFailReason(truncateToColumn(storedReason + " / 자동 환불 시도도 실패: " + e.getMessage()));
             return false;
         }
+    }
+
+    private static final int FAIL_REASON_MAX_LENGTH = 255;
+
+    private String truncateToColumn(String text) {
+        if (text == null || text.length() <= FAIL_REASON_MAX_LENGTH) return text;
+        return text.substring(0, FAIL_REASON_MAX_LENGTH);
     }
 }
