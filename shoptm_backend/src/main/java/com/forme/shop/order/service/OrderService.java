@@ -228,10 +228,17 @@ public class OrderService {
 
     // 누적 구매 금액 계산 → 등급 자동 변경
     private void updateMemberGrade(Member member) {
-        // 취소 제외 전체 주문 금액 합산
+        // 실제로 결제됐고, 그 뒤 취소/환불도 안 된 주문 금액만 합산한다.
+        // - paidAt이 있어야 함: PENDING(결제 없는 데모 주문)은 애초에 결제 자체가 없으므로
+        //   status만으로 걸러내면(예전엔 CANCELLED만 제외) 그 금액까지 누적 구매액에 들어가,
+        //   실제로 한 푼도 안 낸 회원이 등급 할인 대상(SILVER/GOLD/VIP)이 될 수 있었다.
+        // - status가 CANCELLED가 아니어야 함: 취소(cancelIfPaid/cancelIfNotCancelled)는
+        //   status만 바꿀 뿐 paidAt은 그대로 남겨두므로, paidAt 조건만으로는 이미 전액 환불된
+        //   주문(결제는 했지만 나중에 취소된 것)까지 계속 구매액으로 잡혀버린다 — 두 조건을
+        //   모두 만족해야 "실제로 순수하게 결제된 채로 남아있는" 주문이다.
         int totalSpent = orderRepository.findByMemberIdOrderByCreatedAtDesc(member.getId())
                 .stream()
-                .filter(o -> !"CANCELLED".equals(o.getStatus()))
+                .filter(o -> o.getPaidAt() != null && !"CANCELLED".equals(o.getStatus()))
                 .mapToInt(Orders::getTotalPrice)
                 .sum();
 

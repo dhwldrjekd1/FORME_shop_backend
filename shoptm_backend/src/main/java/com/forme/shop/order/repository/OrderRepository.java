@@ -6,6 +6,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface OrderRepository extends JpaRepository<Orders, Long> {
@@ -32,6 +33,12 @@ public interface OrderRepository extends JpaRepository<Orders, Long> {
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Orders o SET o.status = :newStatus, o.updatedAt = CURRENT_TIMESTAMP WHERE o.id = :orderId AND o.status <> 'CANCELLED'")
     int updateStatusIfNotCancelled(@Param("orderId") Long orderId, @Param("newStatus") String newStatus);
+
+    // 결제 없이 생성된 데모 주문(PENDING)이 일정 시간 넘게 그대로 방치돼 있는지 찾는 데 사용
+    // (OrderExpiryScheduler 참고) — 그런 주문은 생성 시점에 이미 실제 재고를 차감해가지만
+    // 결제를 거치지 않으므로, 누군가 수동으로 취소하지 않는 한 그 재고가 영구히 묶여있게 된다.
+    @Query("SELECT o.id FROM Orders o WHERE o.status = :status AND o.createdAt < :cutoff")
+    List<Long> findIdsByStatusAndCreatedAtBefore(@Param("status") String status, @Param("cutoff") LocalDateTime cutoff);
 
     // SELECT * FROM orders WHERE member_id = ? ORDER BY created_at DESC
     // 특정 회원의 주문 목록 최신순 조회

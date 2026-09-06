@@ -24,6 +24,15 @@ public class AdminService {
     private final ProductRepository productRepository;
     private final OrderRepository orderRepository;
 
+    // 매출로 잡을 수 있는 주문인지 — 취소된 것뿐 아니라 결제 없이 생성된 데모 주문(PENDING,
+    // paidAt이 비어있음)도 실제로 낸 돈이 없으므로 매출이 아니다. status만 CANCELLED가 아닌지
+    // 확인하던 예전 기준으로는, 결제 한 번도 안 한 데모 주문 금액까지 대시보드 매출/브랜드별
+    // 매출에 그대로 잡혔음(OrderService.updateMemberGrade에서 같은 종류의 문제를 고친 것과
+    // 동일한 이유로 여기서도 적용).
+    private static boolean countsAsRevenue(Orders o) {
+        return o.getPaidAt() != null && !"CANCELLED".equals(o.getStatus());
+    }
+
     // 관리자 대시보드 통계 조회
     // 회원/상품/주문/매출 통계를 한번에 반환
     public DashboardResponseDto getDashboard() {
@@ -87,7 +96,7 @@ public class AdminService {
         // 취소된 주문 제외하고 totalPrice 합산
         // mapToInt 로 Integer 스트림으로 변환 후 sum()
         int totalRevenue = allOrders.stream()
-                .filter(o -> !o.getStatus().equals("CANCELLED"))
+                .filter(AdminService::countsAsRevenue)
                 .mapToInt(Orders::getTotalPrice)
                 .sum();
 
@@ -112,7 +121,7 @@ public class AdminService {
         for (int i = 6; i >= 0; i--) {
             LocalDate date = LocalDate.now().minusDays(i);
             int dayRevenue = allOrders.stream()
-                    .filter(o -> !o.getStatus().equals("CANCELLED"))
+                    .filter(AdminService::countsAsRevenue)
                     .filter(o -> o.getCreatedAt().toLocalDate().equals(date))
                     .mapToInt(Orders::getTotalPrice)
                     .sum();
@@ -144,7 +153,7 @@ public class AdminService {
         List<Map<String, Object>> brandSales = new ArrayList<>();
         Map<String, Integer> brandRevMap = new LinkedHashMap<>();
         allOrders.stream()
-                .filter(o -> !o.getStatus().equals("CANCELLED"))
+                .filter(AdminService::countsAsRevenue)
                 .flatMap(o -> o.getOrderItems().stream())
                 .forEach(item -> {
                     String brand = item.getProduct() != null && item.getProduct().getBrand() != null
