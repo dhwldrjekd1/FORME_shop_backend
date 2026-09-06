@@ -25,9 +25,13 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     // 아예 못 일어나더라도 이 상태만은 이미 커밋돼 DB에 남아있으므로 "환불해야 하는데 아무
     // 기록도 없이 조용히 유실됨"은 막을 수 있다 — 나중에 이 상태로 남아있는 결제를 찾아
     // 수동으로 처리할 수 있음. 이미 REFUNDED/REFUND_FAILED인 것은 건드리지 않는다.
+    // updatedAt도 함께 갱신 — @UpdateTimestamp는 벌크 JPQL UPDATE 경로를 안 타므로(엔티티
+    // setter를 거치는 경로에서만 자동 갱신됨) OrderRepository의 취소 쿼리들과 동일하게 직접
+    // 세팅해준다. 이게 없으면 REFUND_PENDING으로 멈춰버린 결제를 나중에 찾았을 때, 그게 방금
+    // 발생한 건지 며칠 전 것인지(markLinked 시점 값 그대로) 구분할 수 없다.
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Payment p SET p.status = 'REFUND_PENDING' WHERE p.orders.id = :orderId " +
-            "AND p.status NOT IN ('REFUNDED', 'REFUND_FAILED')")
+    @Query("UPDATE Payment p SET p.status = 'REFUND_PENDING', p.updatedAt = CURRENT_TIMESTAMP " +
+            "WHERE p.orders.id = :orderId AND p.status NOT IN ('REFUNDED', 'REFUND_FAILED')")
     int markRefundPendingForOrder(@Param("orderId") Long orderId);
 
     // 이 결제를 "지금 이 요청이" 주문 생성에 쓰겠다고 선점(claim)한다.

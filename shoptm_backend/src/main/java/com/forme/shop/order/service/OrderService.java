@@ -305,6 +305,13 @@ public class OrderService {
             throw new IllegalArgumentException("취소할 수 없는 주문입니다.");
         }
 
+        // status가 "PAID"였다고 해서 실제로 결제된 게 보장되진 않는다 — 관리자가
+        // updateOrderStatus로 결제 없이도 상태만 "PAID"로 바꿔놓을 수 있고, 그 경로는 paidAt을
+        // 세팅하지 않는다. 그래서 status 문자열이 아니라 paidAt이 실제로 찍혀있는지로 판단한다.
+        // 아래 cancelIfPaid(벌크 UPDATE)가 영속성 컨텍스트를 비우기 전에, 지금 이미 로딩된
+        // orders의 스칼라 값을 미리 읽어둔다(updateOrderStatus의 wasPaid와 동일한 이유).
+        boolean wasPaid = orders.getPaidAt() != null;
+
         List<OrderItem> items = new ArrayList<>(orders.getOrderItems());
 
         int updated = orderRepository.cancelIfPaid(orderId);
@@ -314,10 +321,7 @@ public class OrderService {
         }
 
         restoreStock(orderId, items);
-        // status가 "PAID"였다고 해서 실제로 결제된 게 보장되진 않는다 — 관리자가
-        // updateOrderStatus로 결제 없이도 상태만 "PAID"로 바꿔놓을 수 있고, 그 경로는 paidAt을
-        // 세팅하지 않는다. 그래서 status 문자열이 아니라 paidAt이 실제로 찍혀있는지로 판단한다.
-        refundIfPaidByToss(orderId, orders.getPaidAt() != null, "회원 요청에 의한 주문 취소");
+        refundIfPaidByToss(orderId, wasPaid, "회원 요청에 의한 주문 취소");
     }
 
     // 실제 토스 결제로 대금을 받은 주문이었다면 취소 시 그 결제를 환불한다. 재고 복구까지 이미
@@ -327,42 +331,58 @@ public class OrderService {
     // wasPaid: 취소되기 직전 이 주문에 실제로 결제(paidAt)가 있었는지 — PENDING(결제 없는 데모
     // 주문)이 취소되는 경우엔 애초에 연결된 결제가 없는 게 정상이라 구분이 필요함(PaymentService
     // 참고).
-    // 환불(토스 취소 API 호출)은 되돌릴 수 없는데, 이 시점은 아직 주문 취소 자체를 담은 바깥
-    // 트랜잭션이 커밋되기 전이다. 여기서 바로 환불을 실행하면(REQUIRES_NEW라 즉시 독립적으로
-    // 커밋됨) 바깥 트랜잭션이 이후 어떤 이유로든 커밋에 실패해 롤백될 경우 "주문은 그대로
-    // PAID인데 환불은 이미 나간" 상태가 생길 수 있다. 그래서 실제 환불 호출은 바깥 트랜잭션이
-    // 실제로 커밋된 뒤에만 실행되도록 등록해둔다.
-    // 다만 afterCommit 콜백은 순전히 메모리 안에서만 예약돼있는 것이라, 바깥 트랜잭션이 커밋된
-    // 바로 그 직후 ~ 이 콜백이 실제로 실행되기 전 사이에 프로세스가 죽으면(배포 재시작, OOM 등)
+    // 실제 토스 환불 API 호출은 되돌릴 수 없는데, 이 메서드가 불리는 시점은 아직 주문 취소
+    // 자체를 담은 바깥 트랜잭션이 커밋되기 전이다. 여기서 바로 실행하면 바깥 트랜잭션이 이후
+    // 어떤 이유로든 커밋에 실패해 롤백될 경우 "주문은 그대로 PAID인데 환불은 이미 나간" 상태가
+    // 생길 수 있어, 실제 호출은 바깥 트랜잭션이 커밋된 뒤(afterCommit)에만 하도록 등록해둔다.
+    // 그 afterCommit 콜백은 순전히 메모리 안에서만 예약돼있는 것이라, 바깥 트랜잭션이 커밋된
+    // 바로 그 직후 ~ 콜백이 실제로 실행되기 전 사이에 프로세스가 죽으면(배포 재시작, OOM 등)
     // 이 콜백 자체가 통째로 사라져 "환불해야 하는데 그 사실 자체가 어디에도 안 남는" 상황이
     // 생길 수 있다. 그래서 실제 환불 시도 전에, 주문 취소를 커밋하는 바로 그 트랜잭션 안에서
     // 먼저 연결된 결제를 "환불 대기중"으로 표시해 커밋해둔다 — 최악의 경우(콜백 자체가 못
     // 돌아도) 이 상태가 DB에 남아있어 나중에라도 찾아 수동으로 처리할 수 있다.
+    // paymentService.refundForCancellation 자체는 @Async라 이 메서드는(그리고 이걸 부른
+    // cancelOrder/updateOrderStatus도) 토스 API 응답을 기다리지 않고 바로 반환된다 — 실제
+    // 환불 시도는 별도 스레드에서 이어서 처리됨(PaymentService 참고).
     private void refundIfPaidByToss(Long orderId, boolean wasPaid, String reason) {
         // 결제 없이 생성된 데모 주문(PENDING) 취소는 애초에 환불할 것도, 대기중으로 표시해둘
         // 것도 없다 — 커밋 후 별도 트랜잭션을 여는 콜백 자체를 등록하지 않아 그 오버헤드도 없앤다.
         if (!wasPaid) return;
 
-        // 이 표시 자체가(DB 순간 오류 등으로) 실패하더라도 절대로 이미 성공한 주문 취소 자체를
-        // 롤백시키면 안 된다 — "환불 대기중 표시"는 뒤이은 실제 환불 시도를 더 안전하게 만들기
-        // 위한 보조 장치일 뿐, 이것 때문에 정상적인 취소 요청이 실패해선 안 된다. 이게 실패하면
-        // 어차피 곧바로 이어지는 afterCommit의 실제 환불 시도(및 그 성패 로그)가 여전히 최소한의
-        // 안전망 역할을 한다.
+        // 이 표시는 취소를 담은 바로 그 트랜잭션 안에서 함께 커밋되어야만 의미가 있다(그래야
+        // "환불 필요"라는 사실이 취소와 원자적으로 함께 남는다) — 그래서 REQUIRES_NEW로 분리할
+        // 수 없다. 이 try/catch는 애플리케이션 코드에서 던진 예외가 이 메서드 밖으로 새는 것만
+        // 막을 뿐, 진짜 DB/영속성 계층 예외(커넥션 끊김, 데드락 등)라면 Hibernate가 이미 그
+        // 트랜잭션을 rollback-only로 표시해버린 뒤라 여기서 잡아도 바깥 트랜잭션(취소 자체)의
+        // 커밋 실패까지 막을 수는 없다 — 이런 경우 취소 자체가 실패로 응답되지만, 재고 복구나
+        // 취소 상태 없이 전부 원자적으로 롤백되므로 어중간한 상태 없이 안전하게 실패하고, 사용자는
+        // 다시 취소를 시도하면 된다. PaymentService의 markLinked와 동일한 종류의, 받아들인 한계.
         try {
-            paymentService.markRefundPendingForOrder(orderId);
+            int marked = paymentService.markRefundPendingForOrder(orderId);
+            if (marked == 0) {
+                // wasPaid인데 연결된 결제가 하나도 없음 — 주문 생성 시 markLinked가 드물게
+                // 실패해 결제-주문 연결이 아예 안 남아있던 경우(OrderService.createOrder 주석
+                // 참고). 실제로는 결제가 됐는데 자동으로 환불할 방법이 없는 상황이므로 여기서
+                // 바로 알린다(뒤이은 refundForCancellation은 이 경우 할 일이 없어 조용히 끝남).
+                log.error("결제 완료 상태였던 주문이 취소됐는데 연결된 결제 기록을 찾지 못함 — " +
+                        "수동으로 토스 결제 내역을 확인해 환불이 필요합니다 (orderId={})", orderId);
+            }
         } catch (Exception e) {
-            log.error("환불 대기중 표시 실패 (orderId={}) — 주문 취소 자체는 정상 진행됨", orderId, e);
+            log.error("환불 대기중 표시 실패 (orderId={})", orderId, e);
         }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
+                // paymentService.refundForCancellation은 @Async라 정상적인 경우 즉시 반환되지만,
+                // 스레드풀이 꽉 차 작업 자체를 받아주지 못하면(TaskRejectedException) 그 예외는
+                // 비동기로 처리되지 않고 이 자리에서 바로 던져진다. afterCommit에서 던진 예외는
+                // 트랜잭션이 이미 커밋된 뒤에도 그대로 컨트롤러까지 새어나가(스프링이 커밋 자체는
+                // 취소하지 않음) "주문 취소는 이미 성공했는데 응답은 500"이라는 앞뒤가 안 맞는
+                // 결과를 만든다 — 그래서 여기서 반드시 잡아야 한다.
                 try {
-                    boolean refunded = paymentService.refundForCancellation(orderId, wasPaid, reason);
-                    if (!refunded) {
-                        log.error("주문 취소는 정상 처리됐으나 환불에 실패해 수동 확인이 필요함 (orderId={})", orderId);
-                    }
+                    paymentService.refundForCancellation(orderId, reason);
                 } catch (Exception e) {
-                    log.error("주문 취소 환불 처리 중 오류 (orderId={})", orderId, e);
+                    log.error("환불 작업 등록 실패 (orderId={}) — 환불 대기중 상태로 남아있어 수동 확인 필요", orderId, e);
                 }
             }
         });

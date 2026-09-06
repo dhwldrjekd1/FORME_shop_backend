@@ -13,9 +13,13 @@ import java.time.LocalDateTime;
  *   "카드는 결제됐는데 기록이 하나도 없는" 상태가 남지 않도록 함
  * - 주문(Orders)과 1:1 관계지만, 주문 생성 전(결제만 확정된) 상태에서는 orders가 NULL
  * - 결제 상태 흐름:
- *   CONFIRMED(승인완료, 주문 생성 전) → LINKED(주문 생성 성공)
- *                                    → REFUNDED(주문 생성 실패로 자동 환불됨)
- *                                    → REFUND_FAILED(환불 시도도 실패 — 수동 확인 필요)
+ *   CONFIRMED(승인완료, 주문 생성 전) → PROCESSING(어떤 요청이 이 결제로 주문 생성을 선점함)
+ *                                    → LINKED(주문 생성 성공)
+ *                                        → REFUND_PENDING(그 주문이 취소돼 환불 대기중 —
+ *                                          실제 토스 환불 API 호출 전, 취소와 원자적으로 표시됨)
+ *                                          → REFUNDED(환불 완료) / REFUND_FAILED(환불 시도 실패)
+ *                                    → REFUNDED(주문 생성 자체가 실패해 자동 환불됨)
+ *                                    → REFUND_FAILED(그 환불 시도도 실패 — 수동 확인 필요)
  * - 테이블명: payments
  */
 @Entity
