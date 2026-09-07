@@ -13,6 +13,7 @@ import com.forme.shop.payment.entity.Payment;
 import com.forme.shop.payment.service.PaymentService;
 import com.forme.shop.product.entity.Product;
 import com.forme.shop.product.repository.ProductRepository;
+import com.forme.shop.product.repository.ProductSizeRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +40,7 @@ public class OrderService {
     private final MemberRepository memberRepository;
     private final MemberService memberService;
     private final ProductRepository productRepository;
+    private final ProductSizeRepository productSizeRepository;
     private final PaymentService paymentService;
 
     // 주문 생성 (일반회원)
@@ -122,6 +124,30 @@ public class OrderService {
                 int updated = productRepository.decreaseStockIfAvailable(product.getId(), itemDto.getQuantity());
                 if (updated == 0) {
                     throw new IllegalArgumentException(product.getName() + "의 재고가 부족합니다.");
+                }
+
+                // 사이즈별로 재고를 관리하는 상품이면, 전체 재고와는 별개로 그 사이즈의 재고도
+                // 같은 방식으로 확인+차감한다. 전체 재고만 확인하면 특정 사이즈가 품절이어도
+                // 다른 사이즈에 재고가 남아있는 한(=전체 합계가 0이 아닌 한) 그 품절 사이즈
+                // 주문이 그냥 통과해버렸다 — 화면에는 품절로 표시되는 사이즈인데 API를 직접
+                // 호출하면 주문이 되는 문제였음. 이 확인이 실패하면 예외를 던져 이 메서드를
+                // 감싼 트랜잭션 전체가 롤백되므로, 방금 위에서 차감한 전체 재고도 함께 원복된다.
+                if (productSizeRepository.existsByProductId(product.getId())) {
+                    String size = itemDto.getSize();
+                    if (size == null || size.isBlank()) {
+                        throw new IllegalArgumentException(product.getName() + "은(는) 사이즈를 선택해야 합니다.");
+                    }
+                    int sizeUpdated = productSizeRepository.decreaseStockIfAvailable(product.getId(), size, itemDto.getQuantity());
+                    if (sizeUpdated == 0) {
+                        // 재고가 진짜 부족한 것과, 애초에 그 이름의 사이즈가 이 상품에 없는 것(오래된
+                        // 화면 캐시나 잘못된 값을 그대로 보낸 경우)을 구분해서 알려준다 — 둘 다
+                        // "재고가 부족합니다"로 뭉뚱그리면, 사실은 사이즈명 자체가 안 맞는 문제인데
+                        // 마치 품절인 것처럼 보여 원인 파악이 어려워진다.
+                        if (productSizeRepository.existsByProductIdAndSize(product.getId(), size)) {
+                            throw new IllegalArgumentException(product.getName() + "의 " + size + " 사이즈 재고가 부족합니다.");
+                        }
+                        throw new IllegalArgumentException(product.getName() + "에 존재하지 않는 사이즈입니다: " + size);
+                    }
                 }
 
                 // 세일 할인 적용된 단가 계산
@@ -407,6 +433,23 @@ public class OrderService {
                 // 만들지 않기 위해, 조용히 넘어가지 않고 던져서 취소 자체를 롤백시킨다.
                 throw new IllegalStateException(
                         "재고 복구 대상 상품을 찾지 못했습니다 (orderId=" + orderId + ", productId=" + item.getProduct().getId() + ")");
+            }
+
+            // 주문 당시 사이즈가 기록돼있으면(=사이즈별 재고를 관리하는 상품에서 주문한 것)
+            // 그 사이즈 재고도 함께 복구한다. 영향받은 행이 0이어도(그 사이 관리자가 그
+            // 사이즈를 삭제했거나 상품을 사이즈 미관리로 바꾼 경우) 오류로 취급하지 않는다 —
+            // 전체 재고는 이미 위에서 정상 복구됐으므로, 복구할 사이즈 행이 없는 것뿐 주문
+            // 취소 자체가 실패할 이유는 아니다.
+            if (item.getSize() != null && !item.getSize().isBlank()) {
+                int sizeAffected = productSizeRepository.increaseStock(
+                        item.getProduct().getId(), item.getSize(), item.getQuantity());
+                if (sizeAffected == 0) {
+                    // 위 전체 재고 복구와 달리 이건 취소 자체를 실패시키지 않는다(정상적으로
+                    // 있을 수 있는 상황이라 — 주석 참고). 대신 나중에 Product.stock과
+                    // ProductSize 합계가 왜 안 맞는지 추적할 수 있도록 로그는 남긴다.
+                    log.warn("주문 취소 시 사이즈별 재고 복구 대상을 찾지 못함 — 전체 재고만 복구됨 " +
+                            "(orderId={}, productId={}, size={})", orderId, item.getProduct().getId(), item.getSize());
+                }
             }
         }
     }
