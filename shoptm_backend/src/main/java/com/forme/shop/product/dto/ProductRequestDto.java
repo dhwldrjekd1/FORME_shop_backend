@@ -1,6 +1,7 @@
 package com.forme.shop.product.dto;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -53,7 +54,16 @@ public class ProductRequestDto {
         private String size;         // 사이즈 (S, M, L, XL, FREE 등)
         private String gender;       // 성별 (남성, 여성, 공용)
         private String brand;        // 브랜드 (BEANPOLE, CARHARTT 등)
+
+        // price/stock과 달리 상하한이 없어서, 100을 넘는 값(예: 150)을 넣으면
+        // OrderService.createOrder()의 unitPrice = price * (1 - discountRate/100.0) 계산에서
+        // 단가가 음수가 될 수 있었음 — 결제 금액 검증 로직과 충돌해 정상 결제가 막히거나,
+        // 다른 상품과 묶였을 때 장바구니 전체가 의도치 않게 대폭 할인될 위험이 있었음.
+        @Min(value = 0, message = "할인율은 0 이상이어야 합니다.")
+        @Max(value = 100, message = "할인율은 100 이하여야 합니다.")
         private Integer discountRate;   // 할인율 (%)
+
+        @Min(value = 0, message = "할인 전 가격은 0원 이상이어야 합니다.")
         private Integer originalPrice;  // 할인 전 가격
         private String imageUrl;        // 서버 이미지 URL (직접 지정)
         private String imageUrls;       // 서버 다중 이미지 URL (콤마 구분)
@@ -97,7 +107,12 @@ public class ProductRequestDto {
         private String size;
         private String gender;
         private String brand;
+
+        @Min(value = 0, message = "할인율은 0 이상이어야 합니다.")
+        @Max(value = 100, message = "할인율은 100 이하여야 합니다.")
         private Integer discountRate;
+
+        @Min(value = 0, message = "할인 전 가격은 0원 이상이어야 합니다.")
         private Integer originalPrice;
         private String imageUrl;
         private String imageUrls;
@@ -110,5 +125,11 @@ public class ProductRequestDto {
         private java.util.List<SizeStock> sizeStocks;
         private Boolean isNew;
         private Boolean isBest;
+
+        // 관리자가 이 상품의 수정 화면을 연 시점에 함께 내려받은 updatedAt을 그대로 되돌려
+        // 보내는 값 — 그 사이(수정 화면이 열려있는 동안) 실제 주문/취소로 재고가 바뀌는 등
+        // 이 상품이 이미 갱신됐다면 값이 서로 달라진다. null이면(구버전 클라이언트 등) 검사를
+        // 건너뛴다. ProductService.updateProduct, ProductRepository 참고.
+        private java.time.LocalDateTime expectedUpdatedAt;
     }
 }

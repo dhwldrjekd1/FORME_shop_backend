@@ -249,6 +249,17 @@ public class ProductService {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
+        // 관리자가 수정 화면을 열어둔 사이에 이 상품이 이미 바뀌었으면(실제 주문/취소로 재고가
+        // 변하는 등) 그 변경을 덮어쓰지 않고 거부한다. 특히 사이즈별 재고는 이 메서드가 DTO의
+        // 절대값으로 전체 교체하므로, 이 확인이 없으면 화면을 연 시점의 오래된 재고 값으로
+        // 그 사이의 실제 판매분을 조용히 지워버릴 수 있었다(교차검증에서 발견 — 490bb2f로
+        // 사이즈별 재고가 실제 주문 재고 관리의 기준이 되면서 이 문제가 진짜 오버셀로 이어질
+        // 수 있게 됨). expectedUpdatedAt이 없으면(구버전 클라이언트 등) 이 확인을 건너뛴다.
+        if (dto.getExpectedUpdatedAt() != null && !dto.getExpectedUpdatedAt().equals(product.getUpdatedAt())) {
+            throw new IllegalArgumentException(
+                    "다른 곳에서 이미 이 상품 정보가 변경되었습니다. 새로고침 후 다시 시도해주세요.");
+        }
+
         if (dto.getCategoryId() != null) {
             Category category = categoryRepository.findById(dto.getCategoryId())
                     .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));

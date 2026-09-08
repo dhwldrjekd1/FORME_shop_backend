@@ -14,8 +14,13 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     // 동시 주문 시 같은 재고를 여러 요청이 동시에 통과시켜 오버셀을 일으킬 수 있어,
     // "재고 >= 주문수량"을 DB 단에서 함께 확인하는 조건부 UPDATE로 처리한다.
     // 반환값(영향받은 행 수)이 0이면 재고 부족으로 차감이 적용되지 않은 것.
+    // updatedAt도 함께 갱신 — 관리자 상품수정 화면(ProductService.updateProduct)의 낙관적
+    // 잠금(optimistic lock)이 이 값을 근거로 "내가 폼을 연 뒤로 이 상품에 뭔가 바뀌었는지"를
+    // 판단하는 데 쓰인다. 벌크 UPDATE는 @UpdateTimestamp의 엔티티 setter 경로를 안 타므로
+    // 여기서 직접 세팅해야 함(OrderRepository의 취소 쿼리들과 동일한 이유).
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Product p SET p.stock = p.stock - :quantity WHERE p.id = :productId AND p.stock >= :quantity")
+    @Query("UPDATE Product p SET p.stock = p.stock - :quantity, p.updatedAt = CURRENT_TIMESTAMP " +
+            "WHERE p.id = :productId AND p.stock >= :quantity")
     int decreaseStockIfAvailable(@Param("productId") Long productId, @Param("quantity") Integer quantity);
 
     // 주문 취소 시 재고 복구 — 위와 같은 이유로 원자적 UPDATE로 처리한다.
@@ -25,7 +30,8 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     // decreaseStockIfAvailable과 동일하게 영향받은 행 수를 반환 — 0이면(상품이 그 사이
     // 삭제되는 등) 복구가 조용히 실패한 것이므로 호출 쪽에서 로그를 남길 수 있게 함.
     @Modifying(clearAutomatically = true)
-    @Query("UPDATE Product p SET p.stock = p.stock + :quantity WHERE p.id = :productId")
+    @Query("UPDATE Product p SET p.stock = p.stock + :quantity, p.updatedAt = CURRENT_TIMESTAMP " +
+            "WHERE p.id = :productId")
     int increaseStock(@Param("productId") Long productId, @Param("quantity") Integer quantity);
 
     // SELECT * FROM products WHERE is_active = true
