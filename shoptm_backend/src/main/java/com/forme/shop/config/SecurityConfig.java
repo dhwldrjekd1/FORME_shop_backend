@@ -72,6 +72,14 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.GET, "/api/settings/**").permitAll()
                         // 관리자만 접근 가능
                         .requestMatchers("/api/admin/**").hasAuthority("ROLE_ADMIN")
+                        // 방문자 페이지뷰 기록(POST /analytics/track)은 비로그인 방문자를 포함해
+                        // 모든 사용자의 페이지 이동마다 호출되는 트래킹용이라 계속 열어둬야 함
+                        // (utils/pageTracker.js — 로그인 여부와 무관하게 모든 방문에서 호출됨).
+                        .requestMatchers(HttpMethod.POST, "/api/analytics/track").permitAll()
+                        // 방문자 분석 집계 조회(요약/일별/회원별/상품별 등)는 관리자 전용 — 경로가
+                        // /api/admin/** 밑이 아니라서 이 줄이 없으면 바로 아래 authenticated()에
+                        // 걸려 로그인만 한 일반 회원도 접근 가능했음(교차검증에서 발견).
+                        .requestMatchers(HttpMethod.GET, "/api/analytics/**").hasAuthority("ROLE_ADMIN")
                         // 그 외 /api/** 는 로그인 필요 (장바구니, 주문, 마이페이지 등)
                         .requestMatchers("/api/**").authenticated()
                         // 나머지(SPA 정적 리소스, Vue Router 경로) 는 누구나 접근 가능
