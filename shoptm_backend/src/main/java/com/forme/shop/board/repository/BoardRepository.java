@@ -17,9 +17,14 @@ public interface BoardRepository extends JpaRepository<Board, Long> {
     // 특정 회원이 작성한 게시글 최신순 조회
     List<Board> findByMemberIdAndIsActiveTrueOrderByCreatedAtDesc(Long memberId);
 
-    // SELECT * FROM boards WHERE title LIKE %keyword% AND is_active = true
-    // 제목으로 게시글 검색
-    List<Board> findByTitleContainingAndIsActiveTrueOrderByCreatedAtDesc(String keyword);
+    // 제목으로 게시글 검색 — MemberRepository.searchByNameOrEmail과 동일한 이유로 이스케이프한
+    // 커스텀 쿼리를 쓴다. 예전엔 Spring Data의 Containing 파생 쿼리를 그대로 썼는데, keyword
+    // 안의 '%'/'_'가 원래 문자가 아니라 LIKE 와일드카드로 해석돼(예: 제목에 '_'가 그대로 들어간
+    // "a_b"를 검색했는데 "axb" 같은 무관한 게시글까지 걸림) 검색 결과가 부정확해졌음
+    // (BoardService.searchBoards가 이스케이프해서 넘김).
+    @Query("SELECT b FROM Board b WHERE b.title LIKE CONCAT('%', :keyword, '%') ESCAPE '\\' " +
+           "AND b.isActive = true ORDER BY b.createdAt DESC")
+    List<Board> searchByTitle(@Param("keyword") String escapedKeyword);
 
     // UPDATE boards SET views = views + 1 WHERE id = ?
     // 조회수 1 증가 (게시글 상세 조회 시 호출)

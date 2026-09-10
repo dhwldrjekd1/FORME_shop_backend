@@ -5,6 +5,7 @@ import com.forme.shop.board.dto.BoardResponseDto;
 import com.forme.shop.board.entity.Board;
 import com.forme.shop.board.repository.BoardRepository;
 import com.forme.shop.common.security.SecurityUtil;
+import com.forme.shop.common.util.LikeEscapeUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.service.MemberService;
 import lombok.RequiredArgsConstructor;
@@ -72,9 +73,10 @@ public class BoardService {
                 .collect(Collectors.toList());
     }
 
-    // 제목으로 게시글 검색
+    // 제목으로 게시글 검색 — LikeEscapeUtil 참고 (와일드카드 문자를 그대로 넘기면 검색이
+    // 부정확해지는 문제를 막기 위한 이스케이프).
     public List<BoardResponseDto> searchBoards(String keyword) {
-        return boardRepository.findByTitleContainingAndIsActiveTrueOrderByCreatedAtDesc(keyword)
+        return boardRepository.searchByTitle(LikeEscapeUtil.escape(keyword))
                 .stream()
                 .map(BoardResponseDto::from)
                 .collect(Collectors.toList());

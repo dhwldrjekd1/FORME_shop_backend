@@ -46,10 +46,15 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @EntityGraph(attributePaths = {"category", "sizes"})
     List<Product> findByCategoryIdAndIsActiveTrue(Long categoryId);
 
-    // SELECT * FROM products WHERE name LIKE %keyword% AND is_active = true
-    // 상품명으로 검색
+    // 상품명으로 검색 — MemberRepository.searchByNameOrEmail과 동일한 이유로 이스케이프한
+    // 커스텀 쿼리를 쓴다. 예전엔 Spring Data의 Containing 파생 쿼리를 그대로 썼는데, keyword
+    // 안의 '%'/'_'가 원래 문자가 아니라 LIKE 와일드카드로 해석돼(예: 상품명에 '_'가 그대로
+    // 들어간 "a_b"를 검색했는데 "axb" 같은 무관한 상품까지 걸림) 검색 결과가 부정확해졌음
+    // (ProductService.searchProducts가 이스케이프해서 넘김).
     @EntityGraph(attributePaths = {"category", "sizes"})
-    List<Product> findByNameContainingAndIsActiveTrue(String keyword);
+    @Query("SELECT p FROM Product p WHERE p.name LIKE CONCAT('%', :keyword, '%') ESCAPE '\\' " +
+           "AND p.isActive = true")
+    List<Product> searchByName(@Param("keyword") String escapedKeyword);
 
     // SELECT * FROM products WHERE is_new = true AND is_active = true ORDER BY created_at DESC LIMIT 4
     // 메인 페이지 신상품 4건

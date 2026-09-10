@@ -5,6 +5,7 @@ import com.forme.shop.product.dto.ProductResponseDto;
 import com.forme.shop.product.entity.Product;
 import com.forme.shop.product.entity.ProductSize;
 import com.forme.shop.product.repository.ProductRepository;
+import com.forme.shop.common.util.LikeEscapeUtil;
 import com.forme.shop.category.entity.Category;
 import com.forme.shop.category.repository.CategoryRepository;
 import jakarta.persistence.EntityManager;
@@ -87,9 +88,10 @@ public class ProductService {
     }
 
     // 상품 검색 (상품명 키워드 검색)
-    // 삭제된 상품 제외
+    // 삭제된 상품 제외 — LikeEscapeUtil 참고 (와일드카드 문자를 그대로 넘기면 검색이
+    // 부정확해지는 문제를 막기 위한 이스케이프).
     public List<ProductResponseDto> searchProducts(String keyword) {
-        return productRepository.findByNameContainingAndIsActiveTrue(keyword)
+        return productRepository.searchByName(LikeEscapeUtil.escape(keyword))
                 .stream()
                 .map(ProductResponseDto::from)
                 .collect(Collectors.toList());

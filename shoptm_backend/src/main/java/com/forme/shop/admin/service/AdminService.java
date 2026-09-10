@@ -1,6 +1,7 @@
 package com.forme.shop.admin.service;
 
 import com.forme.shop.admin.dto.DashboardResponseDto;
+import com.forme.shop.common.util.LikeEscapeUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.order.entity.Orders;
@@ -191,16 +192,10 @@ public class AdminService {
     }
 
     // 관리자 - 회원 검색 (이름 또는 이메일로 검색)
+    // 이름 또는 이메일에 키워드가 포함된 회원 검색 — 필터링을 DB 쿼리로 위임
+    // (MemberRepository.searchByNameOrEmail 참고). LikeEscapeUtil 참고 (와일드카드 문자를
+    // 그대로 넘기면 검색이 부정확해지는 문제를 막기 위한 이스케이프).
     public List<Member> searchMembers(String keyword) {
-        // 이름 또는 이메일에 키워드가 포함된 회원 검색 — 필터링을 DB 쿼리로 위임
-        // (MemberRepository.searchByNameOrEmail 참고). LIKE의 와일드카드 문자(%, _)를
-        // 검색어에 그대로 넘기면 진짜 문자가 아니라 패턴으로 해석돼 검색 결과가 부정확해지므로
-        // (예: 이름에 '_'가 들어간 "a_b"를 검색했는데 "axb" 같은 무관한 회원까지 걸림),
-        // 이스케이프 문자(\)부터 먼저 이스케이프한 뒤 %, _ 순으로 이스케이프해서 넘긴다.
-        String escaped = keyword
-                .replace("\\", "\\\\")
-                .replace("%", "\\%")
-                .replace("_", "\\_");
-        return memberRepository.searchByNameOrEmail(escaped);
+        return memberRepository.searchByNameOrEmail(LikeEscapeUtil.escape(keyword));
     }
 }
