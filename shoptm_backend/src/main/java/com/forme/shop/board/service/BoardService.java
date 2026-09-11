@@ -35,7 +35,10 @@ public class BoardService {
     // 존재 여부·삭제 여부 확인 후 게시글을 반환. IllegalArgumentException을 쓰는 이유:
     // IllegalStateException은 GlobalExceptionHandler에 전용 처리기가 없어 500으로 떨어지는데,
     // "존재하지 않음"/"삭제됨"은 클라이언트 입장에서 동일하게 400으로 안내되는 게 맞다.
-    private Board requireActiveBoard(Long id) {
+    // package-private(= 접근제어자 생략): 같은 board.service 패키지의 CommentService도
+    // 댓글 목록 조회 시 부모 게시글이 삭제됐는지 이 메서드로 그대로 확인한다 — 복사해서
+    // 따로 만들면 이 확인(메시지·조건)이 나중에 한쪽만 바뀌어 서로 어긋날 수 있다.
+    Board requireActiveBoard(Long id) {
         Board board = boardRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다."));
         if (!board.getIsActive()) {

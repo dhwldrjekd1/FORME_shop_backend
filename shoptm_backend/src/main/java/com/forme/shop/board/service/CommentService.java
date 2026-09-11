@@ -4,7 +4,6 @@ import com.forme.shop.board.dto.CommentRequestDto;
 import com.forme.shop.board.dto.CommentResponseDto;
 import com.forme.shop.board.entity.Board;
 import com.forme.shop.board.entity.Comment;
-import com.forme.shop.board.repository.BoardRepository;
 import com.forme.shop.board.repository.CommentRepository;
 import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.member.entity.Member;
@@ -22,12 +21,19 @@ import java.util.stream.Collectors;
 public class CommentService {
 
     private final CommentRepository commentRepository;
-    private final BoardRepository boardRepository;
     private final MemberService memberService;
+    private final BoardService boardService;
 
     // 특정 게시글의 댓글 목록 조회
     // 오래된 순서로 반환 (댓글은 위에서 아래로 시간순)
+    // 댓글 자체의 isActive만 걸러서는 부족하다 — 게시글이 삭제(비활성화)되면 그 게시글 자체는
+    // BoardService.getBoard(requireActiveBoard)에서 막히지만, 이 댓글 목록 조회는 별개
+    // 엔드포인트라 게시글이 삭제된 뒤에도 그 밑에 달린 댓글들은 계속 그대로 조회됐음
+    // (createComment는 이미 삭제된 게시글에 새 댓글을 못 달게 막고 있었는데, 기존 댓글을
+    // 읽는 경로에는 같은 확인이 빠져 있었던 것 — 관리자가 게시글을 내려도 그 안의 댓글
+    // 내용은 이 엔드포인트로 계속 노출됐음).
     public List<CommentResponseDto> getComments(Long boardId) {
+        boardService.requireActiveBoard(boardId);
         return commentRepository.findByBoardIdAndIsActiveTrueOrderByCreatedAtAsc(boardId)
                 .stream()
                 .map(CommentResponseDto::from)
@@ -49,14 +55,9 @@ public class CommentService {
     @Transactional
     public CommentResponseDto createComment(Long boardId, Long memberId,
                                             CommentRequestDto.Create dto) {
-        // 게시글 존재 여부 확인
-        Board board = boardRepository.findById(boardId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 게시글입니다."));
-
-        // 삭제된 게시글에는 댓글 작성 불가
-        if (!board.getIsActive()) {
-            throw new IllegalArgumentException("삭제된 게시글에는 댓글을 작성할 수 없습니다.");
-        }
+        // 게시글 존재 여부 + 삭제 여부 확인(getComments와 동일한 확인을 재사용 — BoardService.
+        // requireActiveBoard 주석 참고)
+        Board board = boardService.requireActiveBoard(boardId);
 
         // 본인(또는 관리자) 명의로만 댓글 작성 가능
         Member member = memberService.findSelfOrAdminMember(memberId);
