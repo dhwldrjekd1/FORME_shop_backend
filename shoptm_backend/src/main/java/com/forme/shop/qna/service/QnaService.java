@@ -68,10 +68,18 @@ public class QnaService {
                 .collect(Collectors.toList());
     }
 
-    // Q&A 단건 조회 — 비밀글이면 작성자 본인/관리자가 아닐 때 content/answer를 가림
+    // Q&A 단건 조회 — 비밀글이면 작성자 본인/관리자가 아닐 때 content/answer를 가림.
+    // 목록 조회(getAllQna/getMyQna/getProductQna)는 전부 isActive=true인 것만 걸러서
+    // 내려주는데, 이 단건 조회만 그 확인이 빠져있어서 삭제(비활성화)된 Q&A도 그 id를 알면
+    // (혹은 순차적으로 id를 찍어보면) 이 엔드포인트로 직접 조회할 때는 계속 보였음 — 목록에서
+    // 삭제됐다고 해서 실제로 내용을 못 보게 막힌 게 아니었던 것(BoardService.getBoard의
+    // requireActiveBoard와 동일한 이유로 여기도 확인 추가).
     public QnaResponseDto getQna(Long qnaId) {
         Qna qna = qnaRepository.findById(qnaId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Q&A입니다."));
+        if (!qna.getIsActive()) {
+            throw new IllegalArgumentException("삭제된 Q&A입니다.");
+        }
         return QnaResponseDto.from(qna, canViewSecret(qna));
     }
 
