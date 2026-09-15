@@ -1,0 +1,1 @@
+import{L as e}from"./runtime-core.esm-bundler-32pVmY0D.js";function t(){let t=e(!1);async function n(e){if(!t.value){t.value=!0;try{await e()}finally{t.value=!1}}}return{submitting:t,run:n}}export{t};
