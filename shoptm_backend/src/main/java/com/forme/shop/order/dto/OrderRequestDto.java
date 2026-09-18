@@ -1,7 +1,10 @@
 package com.forme.shop.order.dto;
 
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
 import lombok.Getter;
 import lombok.Setter;
@@ -14,7 +17,10 @@ public class OrderRequestDto {
     @Getter @Setter
     public static class Create {
 
-        @NotNull(message = "주문 상품을 선택해주세요.")
+        // @Valid가 없으면 컨테이너(List) 안 OrderItemDto 각 원소의 @NotNull/@Min 등이
+        // 전혀 검증되지 않는다 — Bean Validation은 필드 자체에 @Valid가 있어야 원소까지 내려간다.
+        @NotEmpty(message = "주문 상품을 선택해주세요.")
+        @Valid
         private List<OrderItemDto> items;  // 주문할 상품 목록
 
         @NotBlank(message = "수령인 이름을 입력해주세요.")
@@ -46,6 +52,7 @@ public class OrderRequestDto {
 
         @NotNull(message = "수량을 입력해주세요.")
         @Min(value = 1, message = "수량은 1개 이상이어야 합니다.")
+        @Max(value = 999, message = "수량은 999개 이하여야 합니다.")
         private Integer quantity;          // 주문 수량
 
         private String size;               // 주문 사이즈
