@@ -14,7 +14,10 @@ import java.time.LocalDateTime;
  * - 구매 인증(order_id)은 선택 — 있으면 본인 주문인지 검증 후 연결, 없어도 작성 가능
  * - 구매 인증 여부와 무관하게 동일 회원이 동일 상품에 중복 리뷰 방지
  *   UNIQUE(member_id, product_id)
- * - 관리자 소프트 삭제: is_active = false
+ * - isActive는 하드 삭제 이전에 소프트 삭제용으로 쓰였던 흔적 — 지금 삭제(본인/관리자
+ *   모두 ReviewService.deleteReview)는 행 자체를 지우는 하드 삭제라 실제로 false가 되는
+ *   경우가 없다. isActive=true만 걸러내는 조회 조건들은 항상 참인 조건이라 동작에는
+ *   영향이 없지만, 이후 다시 소프트 삭제로 바꾸지 않는 한 이 컬럼은 의미가 없다.
  * - 테이블명: reviews
  */
 @Entity
@@ -61,11 +64,10 @@ public class Review {
     @Column
     private LocalDateTime repliedAt; // 답글 작성 시간
 
+    // 실제로는 항상 true — 클래스 상단 설명 참고 (삭제는 하드 삭제라 false가 되지 않음)
     @Builder.Default
     @Column(nullable = false)
     private Boolean isActive = true;
-    // true  = 정상 리뷰
-    // false = 관리자가 삭제한 리뷰 (소프트 삭제)
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
