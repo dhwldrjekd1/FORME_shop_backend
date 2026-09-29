@@ -113,6 +113,13 @@ public class QnaService {
     @Transactional
     public QnaResponseDto updateQna(Long qnaId, QnaRequestDto.Update dto) {
         Qna qna = findSelfOrAdminQna(qnaId);
+        // findSelfOrAdminQna는 소유자/관리자 여부만 확인하고 삭제 여부는 보지 않는다 —
+        // 그대로 두면 이미 삭제(비활성화)한 Q&A도 본인/관리자는 계속 수정할 수 있었다.
+        // 목록/단건 조회 어디에도 노출되지 않으니 접근제어 문제는 아니지만, "삭제한 글을
+        // 계속 고칠 수 있다"는 것 자체가 삭제라는 개념과 맞지 않아 getQna와 동일하게 막는다.
+        if (!qna.getIsActive()) {
+            throw new IllegalArgumentException("삭제된 Q&A입니다.");
+        }
 
         // null 체크 후 값이 있을 때만 수정 (부분 수정 가능)
         if (dto.getTitle()    != null) qna.setTitle(dto.getTitle());
