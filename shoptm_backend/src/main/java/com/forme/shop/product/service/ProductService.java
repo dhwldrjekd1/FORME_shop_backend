@@ -52,6 +52,17 @@ public class ProductService {
         return false;
     }
 
+    // originalPrice(할인 전 가격, 화면에 취소선으로 표시)가 실제 판매가(price)보다 낮으면
+    // "할인 전 가격이 지금 가격보다 싼" 앞뒤가 안 맞는 표시가 된다. 실제 결제 금액은
+    // price와 discountRate로만 계산되고 originalPrice는 순수 표시용이라 결제 사고로
+    // 이어지진 않지만, 관리자가 입력 실수를 등록 시점에 바로 알 수 있도록 막는다.
+    // originalPrice가 없으면(할인 전 가격을 안 쓰는 상품) 검사하지 않는다.
+    private static void requireOriginalPriceNotBelowPrice(Integer originalPrice, Integer price) {
+        if (originalPrice != null && price != null && originalPrice < price) {
+            throw new IllegalArgumentException("할인 전 가격은 현재 가격보다 낮을 수 없습니다.");
+        }
+    }
+
     // application.yml 의 file.upload-dir 값 주입
     @Value("${file.upload-dir}")
     private String uploadDir;
@@ -136,6 +147,8 @@ public class ProductService {
     @Transactional
     public ProductResponseDto createProduct(ProductRequestDto.Create dto,
                                             List<MultipartFile> images) throws IOException {
+        requireOriginalPriceNotBelowPrice(dto.getOriginalPrice(), dto.getPrice());
+
         // categoryId를 명시적으로 보냈는데 존재하지 않으면(오타, 이미 삭제된 카테고리 등) 조용히
         // 다른 카테고리로 대체하지 않고 바로 실패시킨다 — 예전엔 존재하지 않는 categoryId를
         // findById 뒤 orElseGet으로 "테이블의 아무 카테고리나 첫 번째 것"(순서 보장 없음, 심지어
@@ -277,6 +290,14 @@ public class ProductService {
         if (dto.getBrand()       != null) product.setBrand(dto.getBrand());
         if (dto.getDiscountRate()   != null) product.setDiscountRate(dto.getDiscountRate());
         if (dto.getOriginalPrice()  != null) product.setOriginalPrice(dto.getOriginalPrice());
+        // 부분 수정이라 DTO 하나만으로는 판단할 수 없어(예: 이번 요청은 price만 내려도
+        // originalPrice는 그대로 유지됨), 병합까지 끝난 뒤의 최종 값을 기준으로 확인한다.
+        // 단, 이번 요청이 price/originalPrice 둘 다 건드리지 않았다면 검사를 건너뛴다 —
+        // 이 검증이 생기기 전에 이미 어긋난 값으로 저장된 예전 상품이 있다면, 설명만 고치는
+        // 것 같은 무관한 수정까지 이 검사 때문에 막혀버리는 걸 피하기 위함.
+        if (dto.getPrice() != null || dto.getOriginalPrice() != null) {
+            requireOriginalPriceNotBelowPrice(product.getOriginalPrice(), product.getPrice());
+        }
         if (dto.getThumbnailUrl()   != null) product.setThumbnailUrl(dto.getThumbnailUrl());
         if (dto.getColorName()      != null) product.setColorName(dto.getColorName());
         if (dto.getColorHex()       != null) product.setColorHex(dto.getColorHex());
