@@ -31,7 +31,11 @@ public class DeliveryRequestDto {
         // 정상"인 값이라 공백 거부를 적용하지 않는다.
         private String trackingNumber; // 운송장 번호 (선택)
 
+        // 네 가지 값 중 하나가 아니면(오타 등) 그 배송 건이 상태별 목록 조회
+        // (DeliveryService.getDeliveriesByStatus)에서 어디에도 걸리지 않고 조용히
+        // 빠져버릴 수 있어 화이트리스트로 막는다.
         @NotBlank(message = "배송 상태를 입력해주세요.")
+        @Pattern(regexp = "READY|IN_TRANSIT|OUT_FOR_DELIVERY|DELIVERED", message = "배송 상태 값이 올바르지 않습니다.")
         private String status;
         // READY / IN_TRANSIT / OUT_FOR_DELIVERY / DELIVERED
     }

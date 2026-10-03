@@ -23,6 +23,12 @@ public class DeliveryService {
     private final OrderRepository orderRepository;
     private final OrderService orderService;
 
+    // Delivery 엔티티 Javadoc에 적힌 흐름과 동일한 순서 — DeliveryRequestDto.Update.status의
+    // @Pattern 화이트리스트와도 맞춰, 여기 없는 값은 애초에 요청 검증에서 걸러진다.
+    private static final List<String> STATUS_FLOW = List.of("READY", "IN_TRANSIT", "OUT_FOR_DELIVERY", "DELIVERED");
+    private static final int IN_TRANSIT_IDX = STATUS_FLOW.indexOf("IN_TRANSIT");
+    private static final int DELIVERED_IDX = STATUS_FLOW.indexOf("DELIVERED");
+
     // 특정 주문의 배송 정보 조회 — 존재 여부 확인과 소유자 확인을 한 번에 처리하는 이유는
     // OrderService.findSelfOrAdminOrder() 주석 참고 (주문 id 열거 방지)
     public DeliveryResponseDto getDelivery(Long orderId) {
@@ -75,17 +81,28 @@ public class DeliveryService {
         if (dto.getCarrier()        != null) delivery.setCarrier(dto.getCarrier());
         if (dto.getTrackingNumber() != null) delivery.setTrackingNumber(dto.getTrackingNumber());
 
-        // 배송 상태 변경 시 시간 자동 기록
+        // 배송 상태 변경 시 시간 자동 기록 — 상태값 자체가 아니라 흐름상 순서를 기준으로
+        // shippedAt/deliveredAt을 맞춘다. 예전엔 "IN_TRANSIT으로 바뀔 때만" 발송 시간을
+        // 기록해서, OUT_FOR_DELIVERY로 바로 건너뛰면 발송 시간이 영영 안 남고, 반대로
+        // DELIVERED로 잘못 찍었다가 IN_TRANSIT으로 되돌려도 deliveredAt이 안 지워져
+        // "상태는 배송중인데 배송완료 시각은 과거에 찍혀있는" 모순이 남았었다.
         if (dto.getStatus() != null) {
             delivery.setStatus(dto.getStatus());
+            int idx = STATUS_FLOW.indexOf(dto.getStatus());
 
-            // IN_TRANSIT 으로 변경 시 발송 시간 자동 기록
-            if (dto.getStatus().equals("IN_TRANSIT") && delivery.getShippedAt() == null) {
-                delivery.setShippedAt(LocalDateTime.now());
+            // IN_TRANSIT 이상(배달중·배송완료 포함)이면 발송 시간이 있어야 하고,
+            // READY로 되돌아갔다면 아직 발송 전이므로 지운다.
+            if (idx >= IN_TRANSIT_IDX) {
+                if (delivery.getShippedAt() == null) delivery.setShippedAt(LocalDateTime.now());
+            } else {
+                delivery.setShippedAt(null);
             }
-            // DELIVERED 로 변경 시 배송 완료 시간 자동 기록
-            if (dto.getStatus().equals("DELIVERED") && delivery.getDeliveredAt() == null) {
-                delivery.setDeliveredAt(LocalDateTime.now());
+
+            // DELIVERED일 때만 배송완료 시간이 있어야 하고, 그 외 상태로 바뀌면(되돌림 포함) 지운다.
+            if (idx == DELIVERED_IDX) {
+                if (delivery.getDeliveredAt() == null) delivery.setDeliveredAt(LocalDateTime.now());
+            } else {
+                delivery.setDeliveredAt(null);
             }
         }
 
