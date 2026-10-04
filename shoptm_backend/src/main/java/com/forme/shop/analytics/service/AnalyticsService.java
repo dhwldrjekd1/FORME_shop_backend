@@ -3,6 +3,7 @@ package com.forme.shop.analytics.service;
 import com.forme.shop.analytics.dto.PageViewRequest;
 import com.forme.shop.analytics.entity.PageView;
 import com.forme.shop.analytics.repository.PageViewRepository;
+import com.forme.shop.common.security.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import java.util.*;
@@ -14,8 +15,14 @@ public class AnalyticsService {
     private final PageViewRepository pageViewRepository;
 
     public void record(PageViewRequest request) {
+        // request.getLoginId()는 믿지 않는다 — 이 엔드포인트(/api/analytics/track)는 비로그인
+        // 방문자도 호출해야 해서 SecurityConfig에서 permitAll이라, 클라이언트가 보낸 loginId를
+        // 그대로 저장하면 누구나 아무 이메일이나 적어서 관리자 통계(회원별 방문 기록)를
+        // 오염시킬 수 있었다. JwtFilter는 permitAll 라우트에서도 유효한 쿠키가 있으면 항상
+        // SecurityContext를 채워두므로, 실제 로그인 여부는 SecurityUtil.getCurrentEmail()로
+        // 서버가 직접 판단하고(비로그인이면 null — 기존과 동일하게 익명 기록) 클라이언트 값은 쓰지 않는다.
         pageViewRepository.save(new PageView(
-                request.getLoginId(), request.getPageName(),
+                SecurityUtil.getCurrentEmail(), request.getPageName(),
                 request.getPagePath(), request.getDuration()
         ));
     }

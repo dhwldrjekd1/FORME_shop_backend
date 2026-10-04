@@ -3,6 +3,7 @@ package com.forme.shop.common.security;
 import com.forme.shop.config.jwt.JwtUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -13,10 +14,16 @@ public class SecurityUtil {
 
     private SecurityUtil() {}
 
-    // 현재 로그인한 사용자의 이메일 (JWT subject)
+    // 현재 로그인한 사용자의 이메일 (JWT subject). JwtFilter가 유효한 토큰일 때만 진짜
+    // 인증 정보를 채워 넣지만, Spring Security는 그 외의 모든 요청에도 principal이
+    // "anonymousUser"인 AnonymousAuthenticationToken을 기본으로 채워 넣는다 — getAuthentication()
+    // 자체는 null이 아니므로, 이 토큰 타입을 따로 걸러내지 않으면 "로그인 안 한 사람"을
+    // 문자열 "anonymousUser"인 실제 사용자처럼 잘못 취급하게 된다(예: 분석 로그에 이 값이
+    // 실제 이메일인 것처럼 저장될 뻔했던 사고 — AnalyticsService.record 참고).
     public static String getCurrentEmail() {
         Authentication auth = SecurityContextHolder.getContext().getAuthentication();
-        return auth != null ? auth.getName() : null;
+        if (auth == null || auth instanceof AnonymousAuthenticationToken) return null;
+        return auth.getName();
     }
 
     // 현재 로그인한 사용자가 관리자(ROLE_ADMIN)인지
