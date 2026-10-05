@@ -35,6 +35,14 @@ public class WishlistService {
         // 본인(또는 관리자)의 찜 목록에만 추가 가능
         memberService.findSelfOrAdminMember(memberId);
 
+        // productId가 없으면(요청 바디에 productId 키 자체가 빠진 경우) productRepository.
+        // existsById(null)이 Spring Data의 Assert.notNull에 걸려 "The given id must not be
+        // null!" 같은 영문 프레임워크 내부 메시지를 그대로 던지고, 컨트롤러가 그 메시지를
+        // 그대로 클라이언트에 돌려주게 된다 — 다른 API들과 다르게 도메인 메시지가 아닌
+        // 프레임워크 내부 문구가 노출되는 걸 막기 위해 여기서 먼저 걸러낸다.
+        if (productId == null) {
+            throw new IllegalArgumentException("상품을 선택해주세요.");
+        }
         if (!productRepository.existsById(productId)) {
             throw new IllegalArgumentException("존재하지 않는 상품입니다.");
         }
