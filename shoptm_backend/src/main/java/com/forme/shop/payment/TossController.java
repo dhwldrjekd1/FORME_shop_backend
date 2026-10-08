@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.*;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestTemplate;
 
@@ -21,6 +22,20 @@ public class TossController {
 
     private final TossConfig tossConfig;
     private final PaymentService paymentService;
+
+    // PaymentService.buildRestTemplate()과 동일한 이유로 타임아웃을 명시한다 — 여기선
+    // 기본 RestTemplate(타임아웃 무제한)을 매 요청마다 새로 만들어 쓰고 있었는데, 이 호출은
+    // (환불처럼 비동기가 아니라) 사용자의 요청 스레드 위에서 그대로 실행되기 때문에, 토스
+    // 쪽이 응답을 안 주고 멈추면 그 서블릿 스레드가 무한정 묶여있게 된다. 장애 중 반복되면
+    // 스레드 풀이 고갈될 수 있어 커넥션/응답 타임아웃을 둔다.
+    private static final RestTemplate restTemplate = buildRestTemplate();
+
+    private static RestTemplate buildRestTemplate() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5000);
+        factory.setReadTimeout(10000);
+        return new RestTemplate(factory);
+    }
 
     @GetMapping("/client-key")
     public ResponseEntity<?> getClientKey() {
@@ -47,7 +62,7 @@ public class TossController {
                     "amount", amount
             );
 
-            ResponseEntity<Map> response = new RestTemplate().postForEntity(
+            ResponseEntity<Map> response = restTemplate.postForEntity(
                     TossConfig.CONFIRM_URL,
                     new HttpEntity<>(requestBody, headers),
                     Map.class
