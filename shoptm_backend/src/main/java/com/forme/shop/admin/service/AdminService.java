@@ -150,7 +150,14 @@ public class AdminService {
         // =====================
         // 브랜드별 매출
         // =====================
-        // 주문 아이템에서 브랜드별 매출 집계
+        // 주문 아이템에서 브랜드별 매출 집계 — item.unitPrice(품목별로 반올림된 표시 단가)의
+        // 합은, 등급 할인이 걸린 주문에서 orders.totalPrice(결제 검증에 쓰이는 공식 금액 —
+        // 전체 상품 금액 합산 후 등급 할인을 한 번만 반올림해서 뺀 값, OrderService.createOrder
+        // 참고)와 품목이 여러 개거나 수량이 2개 이상이면 몇 원 단위로 어긋날 수 있다. 이건
+        // "단가 1개 필드로 전체 금액을 정확히 나눠 떨어뜨릴 수 없는" 구조적 한계라 품목별
+        // 가격을 억지로 보정해 맞추지는 않았다 — 여기 브랜드별 매출은 서로 비교하는 막대
+        // 그래프(pct)일 뿐 실결제액 집계가 아니라서 이 정도 오차는 허용 가능하다고 판단했고,
+        // 실제 결제·환불 금액은 전부 orders.totalPrice/Payment.amount 기준으로만 정확히 처리된다.
         List<Map<String, Object>> brandSales = new ArrayList<>();
         Map<String, Integer> brandRevMap = new LinkedHashMap<>();
         allOrders.stream()

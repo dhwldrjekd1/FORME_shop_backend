@@ -1,6 +1,7 @@
 package com.forme.shop.cart.dto;
 
 import com.forme.shop.cart.entity.Cart;
+import com.forme.shop.common.util.PriceUtil;
 import lombok.Builder;
 import lombok.Getter;
 import java.time.LocalDateTime;
@@ -26,7 +27,7 @@ public class CartResponseDto {
     public static CartResponseDto from(Cart cart) {
         int origPrice = cart.getProduct().getPrice();
         int discount = cart.getProduct().getDiscountRate() != null ? cart.getProduct().getDiscountRate() : 0;
-        int salePrice = discount > 0 ? (int)(origPrice * (100 - discount) / 100.0) : origPrice;
+        int salePrice = PriceUtil.applyDiscount(origPrice, discount);
 
         return CartResponseDto.builder()
                 .id(cart.getId())

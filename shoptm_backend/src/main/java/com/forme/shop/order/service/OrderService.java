@@ -1,6 +1,7 @@
 package com.forme.shop.order.service;
 
 import com.forme.shop.common.security.SecurityUtil;
+import com.forme.shop.common.util.PriceUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.member.service.MemberService;
@@ -113,7 +114,11 @@ public class OrderService {
                     .build();
 
             // 주문 상품 목록 처리
-            int totalPrice = 0;  //  BigDecimal → int 로 변경
+            // subtotal: 세일 할인만 반영된(등급 할인 전) 합계 — 프론트(cartStore.totalPrice와
+            // 동일)와 정확히 같은 기준으로, 최종 결제 금액 검증에만 쓴다. 등급 할인은 품목마다
+            // 따로 반올림하지 않고 이 합계에 한 번만 반올림해서 적용한다(바로 아래 주석 참고).
+            int subtotal = 0;
+            int gradeDiscount = getGradeDiscount(member.getGrade());
 
             for (OrderRequestDto.OrderItemDto itemDto : dto.getItems()) {
                 // 상품 존재 여부 확인
@@ -150,31 +155,49 @@ public class OrderService {
                     }
                 }
 
-                // 세일 할인 적용된 단가 계산
-                int unitPrice = product.getPrice();
-                if (product.getDiscountRate() != null && product.getDiscountRate() > 0) {
-                    unitPrice = (int) Math.round(product.getPrice() * (1 - product.getDiscountRate() / 100.0));
-                }
+                // 세일 할인 적용된 단가 계산 — CartResponseDto.from()이 장바구니 화면에 내려주는
+                // 계산과 반드시 같은 결과를 내야 해서(프론트가 실제로 토스에 청구하는 금액은 이
+                // 단가를 그대로 더해서 나옴) 복사해 어긋나지 않도록 PriceUtil로 공용화했다 —
+                // 전에는 이 둘이 각자 다른 방식(반올림 vs 버림)을 써서, 할인율 적용 시 소수점이
+                // .5 이상인 가격(예: 103원의 15% 할인 = 87.55원)에서 장바구니는 87원을 보여주고
+                // 실제로 그 금액을 청구하는데 주문 생성은 88원을 기대해 "결제 금액과 주문 금액이
+                // 일치하지 않습니다" 실패(이미 결제된 금액은 자동 환불)로 이어질 수 있었다.
+                int saleUnitPrice = PriceUtil.applyDiscount(product.getPrice(), product.getDiscountRate());
+                subtotal += saleUnitPrice * itemDto.getQuantity();
 
-                // 등급 할인 적용
-                int gradeDiscount = getGradeDiscount(member.getGrade());
+                // 품목에 표시되는 단가 — 등급 할인도 여기 반영해서 보여준다(주문 내역 화면이
+                // 품목별 소계를 따로 보여주지 않고 품목 가격만 보여주므로). 다만 이 값은 화면
+                // 표시용일 뿐, 실제 결제 금액 검증·저장(아래 totalPrice)은 이 품목별로 반올림된
+                // 값들의 합이 아니라 subtotal 기준 한 번의 반올림으로 별도 계산한다 — 품목이
+                // 여러 개일 때 "품목마다 반올림 후 합산"과 "합산 후 한 번만 반올림"이 결과가
+                // 달라질 수 있는데(예: 110원 x 3개, 5% 할인 → 전자는 315원, 후자는 313원),
+                // 결제 화면(PaymentView.vue)은 항상 후자(합산 후 반올림) 방식으로 금액을
+                // 계산해서 토스에 그 금액을 그대로 청구한다. 예전엔 여기서 전자 방식을 써서,
+                // 등급 할인 적용 + 품목 2개 이상인 주문에서 실제 청구액과 서버가 기대하는
+                // totalPrice가 몇 원 단위로 어긋나 "결제 금액과 주문 금액이 일치하지 않습니다"로
+                // 주문 생성이 실패(이미 결제된 금액은 자동 환불)하는 사고로 이어질 수 있었다.
+                int displayUnitPrice = saleUnitPrice;
                 if (gradeDiscount > 0) {
-                    unitPrice = (int) Math.round(unitPrice * (1 - gradeDiscount / 100.0));
+                    displayUnitPrice = (int) Math.round(saleUnitPrice * (1 - gradeDiscount / 100.0));
                 }
 
                 OrderItem orderItem = OrderItem.builder()
                         .orders(orders)
                         .product(product)
                         .quantity(itemDto.getQuantity())
-                        .unitPrice(unitPrice)
+                        .unitPrice(displayUnitPrice)
                         .size(itemDto.getSize())
                         .build();
 
                 orders.getOrderItems().add(orderItem);
-
-                totalPrice += unitPrice * itemDto.getQuantity();
             }
 
+            // subtotal * gradeDiscount를 먼저 int끼리 곱하면(자바의 연산 순서상 /100.0 전에
+            // 평가됨) 아주 큰 주문 금액에서 int 범위를 넘겨 조용히 오버플로할 수 있어, 곱하기
+            // 전에 피연산자 하나를 double로 미리 바꿔 전체를 double 연산으로 만든다.
+            int gradeDiscountAmount = gradeDiscount > 0
+                    ? (int) Math.round((double) subtotal * gradeDiscount / 100.0) : 0;
+            int totalPrice = subtotal - gradeDiscountAmount;
             orders.setTotalPrice(totalPrice);
 
             // 실제 결제 승인 금액(paidAmount)이 서버가 방금 계산한 진짜 주문 금액(totalPrice)과
