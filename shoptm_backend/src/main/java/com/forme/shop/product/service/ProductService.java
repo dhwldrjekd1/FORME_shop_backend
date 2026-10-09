@@ -10,6 +10,8 @@ import com.forme.shop.category.entity.Category;
 import com.forme.shop.category.repository.CategoryRepository;
 import jakarta.persistence.EntityManager;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
@@ -27,6 +29,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)   // 기본적으로 읽기 전용 트랜잭션 (조회 성능 최적화)
 public class ProductService {
+
+    private static final Logger log = LoggerFactory.getLogger(ProductService.class);
 
     private final ProductRepository productRepository;
     private final CategoryRepository categoryRepository;
@@ -144,7 +148,11 @@ public class ProductService {
     }
 
     // 상품 등록 (관리자) - 다중 이미지 업로드
-    @Transactional
+    // rollbackFor 지정: 기본 @Transactional은 RuntimeException/Error에서만 롤백하고 체크 예외인
+    // IOException(이미지 저장 중 디스크 오류)에서는 그대로 커밋해버린다 — saveImages가 디스크의
+    // 이미 저장된 파일을 지워도, DB 쪽은 그 이미지 저장 실패를 반영 못 한 채 커밋되면 앞뒤가 안
+    // 맞는 상태가 남는다. IOException도 명시적으로 롤백 대상에 넣어 디스크와 DB가 같이 롤백되게 함.
+    @Transactional(rollbackFor = Exception.class)
     public ProductResponseDto createProduct(ProductRequestDto.Create dto,
                                             List<MultipartFile> images) throws IOException {
         requireOriginalPriceNotBelowPrice(dto.getOriginalPrice(), dto.getPrice());
@@ -165,22 +173,6 @@ public class ProductService {
                     .orElseThrow(() -> new IllegalArgumentException("카테고리가 없습니다. 먼저 카테고리를 등록해주세요."));
         }
 
-        // 이미지 처리: dto에 URL이 있으면 우선 사용, 없으면 파일 업로드
-        String imageUrl = dto.getImageUrl();
-        String imageUrls = dto.getImageUrls();
-        if ((imageUrl == null || imageUrl.isBlank()) && images != null && !images.isEmpty()) {
-            List<String> urls = new java.util.ArrayList<>();
-            for (MultipartFile img : images) {
-                if (img != null && !img.isEmpty()) {
-                    urls.add(saveImage(img));
-                }
-            }
-            if (!urls.isEmpty()) {
-                imageUrl = urls.get(0);
-                imageUrls = String.join(",", urls);
-            }
-        }
-
         // 추천 등록 시 같은 브랜드의 기존 추천 자동 해제
         if (Boolean.TRUE.equals(dto.getIsRecommend()) && dto.getBrand() != null) {
             List<Product> existing = productRepository.findByBrandAndIsRecommendTrueAndIsActiveTrue(dto.getBrand());
@@ -199,6 +191,23 @@ public class ProductService {
         // ID 직접 지정 시 중복 체크
         if (dto.getId() != null && productRepository.existsById(dto.getId())) {
             throw new IllegalArgumentException("이미 존재하는 상품 ID입니다: " + dto.getId());
+        }
+
+        // 이미지 처리: dto에 URL이 있으면 우선 사용, 없으면 파일 업로드. 디스크에 실제로 파일을
+        // 쓰는 일이라 실패 시 되돌릴 방법이 없는 단계이므로, 위의 검증들을 전부 통과한 뒤 — DB
+        // 저장(바로 아래 saveAndFlush) 바로 앞에서만 실행해, 그 사이 다른 이유로 실패해 롤백될
+        // 때 방금 쓴 이미지 파일이 참조할 곳 없이 디스크에 남는 경우를 최소화한다. 그래도
+        // saveAndFlush 자체(브랜드 추천 유니크 충돌)는 이미지 저장 뒤에만 알 수 있어, 그 실패는
+        // 아래 catch에서 별도로 정리한다.
+        List<String> savedUrls = List.of();
+        String imageUrl = dto.getImageUrl();
+        String imageUrls = dto.getImageUrls();
+        if ((imageUrl == null || imageUrl.isBlank()) && images != null && !images.isEmpty()) {
+            savedUrls = saveImages(images);
+            if (!savedUrls.isEmpty()) {
+                imageUrl = savedUrls.get(0);
+                imageUrls = String.join(",", savedUrls);
+            }
         }
 
         Product product = Product.builder()
@@ -251,13 +260,18 @@ public class ProductService {
         try {
             return ProductResponseDto.from(productRepository.saveAndFlush(product));
         } catch (DataIntegrityViolationException e) {
+            // 바로 위에서 저장한 이미지 파일들이 저장될 상품 없이 디스크에만 남는 것을 막는다.
+            savedUrls.forEach(this::deleteUploadedFile);
             if (!isBrandRecommendConflict(e)) throw e;
             throw new IllegalArgumentException("방금 다른 관리자가 같은 브랜드의 추천상품을 변경했습니다. 새로고침 후 다시 시도해주세요.");
         }
     }
 
     // 상품 수정 (관리자) - 다중 이미지 업로드
-    @Transactional
+    // rollbackFor: createProduct와 같은 이유(바로 위 주석 참고) — IOException도 롤백 대상으로
+    // 명시해, 이미지 저장 중 디스크 오류가 나면 이미 이 메서드에서 바뀐 재고/가격 등 다른 필드
+    // 변경까지 함께 롤백되게 한다.
+    @Transactional(rollbackFor = Exception.class)
     public ProductResponseDto updateProduct(Long id,
                                             ProductRequestDto.Update dto,
                                             List<MultipartFile> images) throws IOException {
@@ -331,20 +345,28 @@ public class ProductService {
         }
 
         // 파일 업로드가 있으면 기존 이미지 교체
+        List<String> savedUrls = List.of();
         if (images != null && !images.isEmpty()) {
-            List<String> urls = new java.util.ArrayList<>();
-            for (MultipartFile img : images) {
-                if (img != null && !img.isEmpty()) {
-                    urls.add(saveImage(img));
-                }
-            }
-            if (!urls.isEmpty()) {
-                product.setImageUrl(urls.get(0));
-                product.setImageUrls(String.join(",", urls));
+            savedUrls = saveImages(images);
+            if (!savedUrls.isEmpty()) {
+                product.setImageUrl(savedUrls.get(0));
+                product.setImageUrls(String.join(",", savedUrls));
             }
         }
 
-        return ProductResponseDto.from(product);
+        // 이 메서드는 그동안 saveAndFlush 없이 더티체킹에만 맡겨 커밋 시점(메서드 반환 이후)에야
+        // UPDATE가 나가게 했는데, 그러면 brand를 바꾸는 수정이 (createProduct/setRecommend처럼
+        // 기존 추천을 해제하는 로직이 updateProduct엔 없어서) 브랜드당 추천상품 유니크 인덱스에
+        // 걸릴 경우 그 실패가 이 메서드 try/catch 바깥에서 터져 방금 저장한 이미지 파일이 치울
+        // 방법 없이 디스크에 남고, 사용자에게도 다른 메서드들과 다른 날것의 에러가 그대로 노출됐다.
+        // saveAndFlush로 커밋을 이 메서드 안으로 끌어와 같은 방식으로 처리한다.
+        try {
+            return ProductResponseDto.from(productRepository.saveAndFlush(product));
+        } catch (DataIntegrityViolationException e) {
+            savedUrls.forEach(this::deleteUploadedFile);
+            if (!isBrandRecommendConflict(e)) throw e;
+            throw new IllegalArgumentException("방금 다른 관리자가 같은 브랜드의 추천상품을 변경했습니다. 새로고침 후 다시 시도해주세요.");
+        }
     }
 
     // 추천 전체 초기화 (모든 상품 대상)
@@ -433,6 +455,41 @@ public class ProductService {
     private static final List<String> ALLOWED_IMAGE_EXTENSIONS =
             List.of("jpg", "jpeg", "png", "gif", "webp");
 
+    // 여러 이미지를 순서대로 저장한다. 파일 저장은 DB 트랜잭션 밖(디스크)의 일이라, 뒤쪽
+    // 이미지에서 확장자/매직바이트 검증 실패(IllegalArgumentException)나 디스크 오류
+    // (IOException)가 나서 이 메서드가 예외를 던지면 호출부의 @Transactional이 DB는 롤백해도
+    // 이미 디스크에 써진 앞쪽 이미지들은 그대로 남아 고아 파일이 된다 — 그래서 실패 시 이번
+    // 호출에서 이미 저장한 파일들을 직접 지우고 나서야 예외를 다시 던진다.
+    private List<String> saveImages(List<MultipartFile> images) throws IOException {
+        List<String> urls = new java.util.ArrayList<>();
+        try {
+            for (MultipartFile img : images) {
+                if (img != null && !img.isEmpty()) {
+                    urls.add(saveImage(img));
+                }
+            }
+            return urls;
+        } catch (IOException | RuntimeException e) {
+            for (String url : urls) {
+                deleteUploadedFile(url);
+            }
+            throw e;
+        }
+    }
+
+    // saveImages의 정리 과정에서 실제로 지우지 못한 파일이 있으면(권한 문제, 이미 없어짐 등)
+    // 그 사실 자체는 운영에서 고아 파일을 추적할 유일한 흔적이라 로그로 남긴다. delete()는
+    // 실패해도 예외를 던지지 않으므로 반환값을 반드시 확인해야 한다.
+    private void deleteUploadedFile(String url) {
+        File file = new File(new File(uploadDir).getAbsoluteFile(), url.substring("/uploads/".length()));
+        // delete()는 삭제 실패와 "원래 거기 파일이 없었음"을 둘 다 false로 뭉뚱그려 반환한다 —
+        // transferTo가 파일을 쓰기 전에 실패한 경우(권한 오류 등) 지울 파일 자체가 없는 게
+        // 정상이므로, exists()로 먼저 걸러내 그런 경우까지 "삭제 실패"로 잘못 경고하지 않는다.
+        if (file.exists() && !file.delete()) {
+            log.warn("이미지 업로드 실패 후 정리 중 파일 삭제 실패 — 수동 확인 필요: {}", file.getAbsolutePath());
+        }
+    }
+
     // 이미지 파일 저장
     // 파일명은 원본 파일명을 전혀 사용하지 않고 "UUID.확장자" 형태로만 생성한다.
     // 원본 파일명(image.getOriginalFilename())은 클라이언트가 임의로 조작해 보낼 수 있는 값이라
@@ -450,7 +507,15 @@ public class ProductService {
         String fileName = UUID.randomUUID() + "." + ext;
         File dest = new File(dir, fileName);
 
-        image.transferTo(dest);
+        // transferTo가 바이트를 일부만 쓴 채로 실패(디스크 가득 참 등)할 수 있다 — 이 경우
+        // saveImages의 정리 루프는 이 파일의 URL을 아직 모르니(반환 전에 예외가 났으므로) 지울
+        // 수 없다. 그래서 실패 시 여기서 바로 그 반쪽짜리 파일을 지운다.
+        try {
+            image.transferTo(dest);
+        } catch (IOException e) {
+            deleteUploadedFile("/uploads/" + fileName);
+            throw e;
+        }
 
         return "/uploads/" + fileName;
     }
