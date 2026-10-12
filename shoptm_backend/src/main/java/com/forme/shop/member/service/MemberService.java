@@ -214,6 +214,7 @@ public class MemberService {
 
     // 관리자 - 전체 회원 목록 조회
     public List<MemberResponseDto> getAllMembers() {
+        SecurityUtil.requireAdmin();
         return memberRepository.findAll()
                 .stream()
                 .map(MemberResponseDto::from)   // 각 Member 엔티티를 DTO로 변환
@@ -223,6 +224,7 @@ public class MemberService {
     // 관리자 - 회원 강퇴 (소프트 삭제, 탈퇴와 동일한 처리)
     @Transactional
     public void banMember(Long id, String currentPassword) {
+        SecurityUtil.requireAdmin();
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
 
@@ -251,6 +253,7 @@ public class MemberService {
     // 관리자 - 회원 등급 변경 (BRONZE / SILVER / GOLD / VIP)
     @Transactional
     public void changeGrade(Long id, String grade) {
+        SecurityUtil.requireAdmin();
         // Set.of(...).contains(null)은 false가 아니라 NPE를 던지므로(불변 컬렉션이 null 인자
         // 자체를 거부함) null도 먼저 걸러야 한다 — 지금은 @RequestParam String grade가 필수라
         // API로는 null이 들어올 수 없지만, 이 메서드를 다른 경로(내부 호출 등)에서도 안전하게

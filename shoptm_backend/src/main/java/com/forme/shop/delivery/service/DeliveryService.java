@@ -1,5 +1,6 @@
 package com.forme.shop.delivery.service;
 
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.delivery.dto.DeliveryRequestDto;
 import com.forme.shop.delivery.dto.DeliveryResponseDto;
 import com.forme.shop.delivery.entity.Delivery;
@@ -42,6 +43,7 @@ public class DeliveryService {
     // 배송 상태별 목록 조회 (관리자)
     // ex: status = "IN_TRANSIT" → 배송중인 것만 조회
     public List<DeliveryResponseDto> getDeliveriesByStatus(String status) {
+        SecurityUtil.requireAdmin();
         return deliveryRepository.findByStatus(status)
                 .stream()
                 .map(DeliveryResponseDto::from)
@@ -52,6 +54,7 @@ public class DeliveryService {
     // 주문 생성 후 배송 정보를 별도로 등록할 때 사용
     @Transactional
     public DeliveryResponseDto createDelivery(Long orderId, DeliveryRequestDto.Create dto) {
+        SecurityUtil.requireAdmin();
         // 주문 존재 여부 확인
         Orders orders = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
@@ -74,6 +77,7 @@ public class DeliveryService {
     // 운송장 번호 입력, 배송 상태 변경 등
     @Transactional
     public DeliveryResponseDto updateDelivery(Long deliveryId, DeliveryRequestDto.Update dto) {
+        SecurityUtil.requireAdmin();
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 배송 정보입니다."));
 

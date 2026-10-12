@@ -28,6 +28,7 @@ public class AnalyticsService {
     }
 
     public Map<String, Object> getSummary() {
+        SecurityUtil.requireAdmin();
         Map<String, Object> s = new LinkedHashMap<>();
         s.put("totalPages", pageViewRepository.countDistinctPages());
         s.put("activeUsers", pageViewRepository.countDistinctUsers());
@@ -37,6 +38,7 @@ public class AnalyticsService {
     }
 
     public List<Map<String, Object>> getPageStats() {
+        SecurityUtil.requireAdmin();
         List<Map<String, Object>> result = new ArrayList<>();
         for (Object[] row : pageViewRepository.findPageStats()) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -49,6 +51,7 @@ public class AnalyticsService {
     }
 
     public List<Map<String, Object>> getUserStats() {
+        SecurityUtil.requireAdmin();
         List<Map<String, Object>> result = new ArrayList<>();
         for (Object[] row : pageViewRepository.findUserStats()) {
             Map<String, Object> m = new LinkedHashMap<>();
@@ -61,6 +64,7 @@ public class AnalyticsService {
     }
 
     public List<Map<String, Object>> getHourlyStats() {
+        SecurityUtil.requireAdmin();
         Map<Integer, Long> hourMap = new LinkedHashMap<>();
         for (int i = 0; i < 24; i++) hourMap.put(i, 0L);
         for (Object[] row : pageViewRepository.findHourlyStats()) {
@@ -72,11 +76,13 @@ public class AnalyticsService {
     }
 
     public List<PageView> getRecentViews() {
+        SecurityUtil.requireAdmin();
         return pageViewRepository.findTop50ByOrderByCreatedAtDesc();
     }
 
     // 상품 상세 페이지별 체류시간 (제품명 포함)
     public List<Map<String, Object>> getProductDetailStats() {
+        SecurityUtil.requireAdmin();
         List<Map<String, Object>> result = new ArrayList<>();
         for (Object[] row : pageViewRepository.findProductDetailStats()) {
             String path = (String) row[0]; // /products/405

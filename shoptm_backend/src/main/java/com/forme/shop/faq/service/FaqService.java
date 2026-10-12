@@ -1,5 +1,6 @@
 package com.forme.shop.faq.service;
 
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.faq.dto.FaqRequestDto;
 import com.forme.shop.faq.dto.FaqResponseDto;
 import com.forme.shop.faq.entity.Faq;
@@ -29,6 +30,7 @@ public class FaqService {
     // FAQ 등록 (관리자)
     @Transactional
     public FaqResponseDto createFaq(FaqRequestDto.Create dto) {
+        SecurityUtil.requireAdmin();
         Faq faq = Faq.builder()
                 .category(dto.getCategory())
                 .question(dto.getQuestion())
@@ -42,6 +44,7 @@ public class FaqService {
     // FAQ 수정 (관리자)
     @Transactional
     public FaqResponseDto updateFaq(Long faqId, FaqRequestDto.Update dto) {
+        SecurityUtil.requireAdmin();
         Faq faq = faqRepository.findById(faqId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 FAQ입니다."));
 
@@ -58,6 +61,7 @@ public class FaqService {
     // FAQ 삭제 (관리자)
     @Transactional
     public void deleteFaq(Long faqId) {
+        SecurityUtil.requireAdmin();
         if (!faqRepository.existsById(faqId)) {
             throw new IllegalArgumentException("존재하지 않는 FAQ입니다.");
         }

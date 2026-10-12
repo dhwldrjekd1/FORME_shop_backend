@@ -4,6 +4,7 @@ import com.forme.shop.category.dto.CategoryRequestDto;
 import com.forme.shop.category.dto.CategoryResponseDto;
 import com.forme.shop.category.entity.Category;
 import com.forme.shop.category.repository.CategoryRepository;
+import com.forme.shop.common.security.SecurityUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -29,6 +30,7 @@ public class CategoryService {
     // 전체 카테고리 목록 조회 (관리자)
     // 비활성 포함 전체 조회
     public List<CategoryResponseDto> getAllCategories() {
+        SecurityUtil.requireAdmin();
         return categoryRepository.findAll()
                 .stream()
                 .map(CategoryResponseDto::from)
@@ -53,6 +55,7 @@ public class CategoryService {
     // 카테고리 등록 (관리자)
     @Transactional
     public CategoryResponseDto createCategory(CategoryRequestDto.Create dto) {
+        SecurityUtil.requireAdmin();
         Category category = Category.builder()
                 .name(dto.getName())
                 .description(dto.getDescription())
@@ -64,6 +67,7 @@ public class CategoryService {
     // 카테고리 수정 (관리자)
     @Transactional
     public CategoryResponseDto updateCategory(Long id, CategoryRequestDto.Update dto) {
+        SecurityUtil.requireAdmin();
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
 
@@ -80,6 +84,7 @@ public class CategoryService {
     // 카테고리 삭제 (관리자) - 소프트 삭제
     @Transactional
     public void deleteCategory(Long id) {
+        SecurityUtil.requireAdmin();
         Category category = categoryRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
         category.setIsActive(false);  // 비활성화 처리

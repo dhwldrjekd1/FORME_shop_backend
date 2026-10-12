@@ -1,6 +1,7 @@
 package com.forme.shop.admin.service;
 
 import com.forme.shop.admin.dto.DashboardResponseDto;
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.common.util.LikeEscapeUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
@@ -37,6 +38,7 @@ public class AdminService {
     // 관리자 대시보드 통계 조회
     // 회원/상품/주문/매출 통계를 한번에 반환
     public DashboardResponseDto getDashboard() {
+        SecurityUtil.requireAdmin();
 
         // 전체 회원 목록 한번에 조회 (반복 쿼리 방지)
         List<Member> allMembers = memberRepository.findAll();
@@ -203,6 +205,7 @@ public class AdminService {
     // (MemberRepository.searchByNameOrEmail 참고). LikeEscapeUtil 참고 (와일드카드 문자를
     // 그대로 넘기면 검색이 부정확해지는 문제를 막기 위한 이스케이프).
     public List<Member> searchMembers(String keyword) {
+        SecurityUtil.requireAdmin();
         return memberRepository.searchByNameOrEmail(LikeEscapeUtil.escape(keyword));
     }
 }

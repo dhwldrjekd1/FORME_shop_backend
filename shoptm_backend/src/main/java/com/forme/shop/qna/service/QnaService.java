@@ -161,6 +161,7 @@ public class QnaService {
     // 답변 등록 시 status = ANSWERED 로 변경
     @Transactional
     public QnaResponseDto answerQna(Long qnaId, QnaRequestDto.Answer dto) {
+        SecurityUtil.requireAdmin();
         Qna qna = qnaRepository.findById(qnaId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Q&A입니다."));
 
@@ -176,6 +177,7 @@ public class QnaService {
     // 답변 삭제 시 status = PENDING 으로 초기화
     @Transactional
     public QnaResponseDto deleteAnswer(Long qnaId) {
+        SecurityUtil.requireAdmin();
         Qna qna = qnaRepository.findById(qnaId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 Q&A입니다."));
 

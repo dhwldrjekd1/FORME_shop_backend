@@ -1,6 +1,5 @@
 package com.forme.shop.order.scheduler;
 
-import com.forme.shop.order.dto.OrderRequestDto;
 import com.forme.shop.order.repository.OrderRepository;
 import com.forme.shop.order.service.OrderService;
 import lombok.RequiredArgsConstructor;
@@ -33,8 +32,8 @@ public class OrderExpiryScheduler {
     // 주문은 전부 결제 없는 데모 주문뿐이고, "결제 진행 중이라 아직 PENDING"인 정상 케이스는
     // 없다 — 짧게 잡아도 진행 중인 결제를 잘못 끊을 위험은 없다는 뜻. 그래도 관리자가 데모
     // 주문을 수동으로 확인/처리(무통장입금 확인 후 발송과 비슷한 방식)할 시간은 남겨두기
-    // 위해 24시간으로 둔다.
-    private static final long EXPIRY_HOURS = 24;
+    // 위해 24시간으로 둔다. OrderService.expireStalePendingOrder()도 같은 기준으로 자체
+    // 재확인을 하므로, 값이 둘 사이에서 어긋나지 않도록 OrderService.EXPIRY_HOURS 하나만 쓴다.
 
     private final OrderRepository orderRepository;
     private final OrderService orderService;
@@ -42,14 +41,12 @@ public class OrderExpiryScheduler {
     // 매 시간 한 번씩 확인 (서버 기동 1분 뒤부터).
     @Scheduled(fixedDelay = 60 * 60 * 1000L, initialDelay = 60 * 1000L)
     public void expireStalePendingOrders() {
-        LocalDateTime cutoff = LocalDateTime.now().minusHours(EXPIRY_HOURS);
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(OrderService.EXPIRY_HOURS);
         List<Long> staleOrderIds = orderRepository.findIdsByStatusAndCreatedAtBefore("PENDING", cutoff);
         for (Long orderId : staleOrderIds) {
             try {
-                OrderRequestDto.UpdateStatus dto = new OrderRequestDto.UpdateStatus();
-                dto.setStatus("CANCELLED");
-                orderService.updateOrderStatus(orderId, dto);
-                log.info("결제 없이 {}시간 넘게 방치된 데모 주문을 자동 취소함 (orderId={})", EXPIRY_HOURS, orderId);
+                orderService.expireStalePendingOrder(orderId);
+                log.info("결제 없이 {}시간 넘게 방치된 데모 주문을 자동 취소함 (orderId={})", OrderService.EXPIRY_HOURS, orderId);
             } catch (Exception e) {
                 // 한 건이 실패해도(그 사이 다른 경로로 이미 처리됐거나 등) 나머지 만료 대상은
                 // 계속 처리한다.

@@ -26,6 +26,17 @@ public interface OrderRepository extends JpaRepository<Orders, Long> {
     @Query("UPDATE Orders o SET o.status = 'CANCELLED', o.updatedAt = CURRENT_TIMESTAMP WHERE o.id = :orderId AND o.status <> 'CANCELLED'")
     int cancelIfNotCancelled(@Param("orderId") Long orderId);
 
+    // 방치된 PENDING 주문 자동만료용(OrderService.expireStalePendingOrder): "PENDING이고
+    // cutoff보다 오래됐다"는 조건을 이 원자적 UPDATE의 WHERE절에 직접 못박는다. 호출부에서
+    // findById로 미리 읽어 애플리케이션 레벨에서만 PENDING·age를 확인하고 이 UPDATE는 그냥
+    // cancelIfNotCancelled처럼 느슨한 조건으로 돌리면, 그 확인과 이 UPDATE 사이에 실제로
+    // 결제가 확정돼 PAID로 바뀐 주문까지 취소되고(그리고 환불까지 나갈 수 있는) 레이스가
+    // 생긴다(교차검증에서 발견) — 조건을 DB 쪽 WHERE절 자체에 넣어야 그 틈이 없어진다.
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Orders o SET o.status = 'CANCELLED', o.updatedAt = CURRENT_TIMESTAMP " +
+           "WHERE o.id = :orderId AND o.status = 'PENDING' AND o.createdAt < :cutoff")
+    int cancelIfStalePending(@Param("orderId") Long orderId, @Param("cutoff") LocalDateTime cutoff);
+
     // 관리자 상태변경용(취소 외 상태): CANCELLED가 아닌 주문만 원자적으로 상태를 바꾼다.
     // 이 조건이 없으면, 회원이 막 취소해서 재고까지 복구된 주문을 관리자의 다른 상태변경
     // 요청(예: SHIPPED)이 거의 동시에 덮어써서 "재고는 복구됐는데 주문은 취소 아님"으로

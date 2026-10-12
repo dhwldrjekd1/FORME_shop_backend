@@ -3,6 +3,7 @@ package com.forme.shop.common.security;
 import com.forme.shop.config.jwt.JwtUtil;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -59,5 +60,18 @@ public class SecurityUtil {
     public static boolean isSelf(String resourceOwnerEmail) {
         String current = getCurrentEmail();
         return current != null && current.equals(resourceOwnerEmail);
+    }
+
+    // 관리자 전용 서비스 메서드가 호출 시작 지점에서 바로 쓰는 단언. 본인/본인-또는-관리자
+    // 자원과 달리, 이런 메서드들은 그동안 SecurityConfig의 "/api/admin/**" URL 매칭 한 겹에만
+    // 의존했다 — 이 클래스 자체의 설계 원칙(바로 위 주석, "컨트롤러가 아니라 서비스 계층에서
+    // 검증해야 어떤 경로로 호출되든 우회할 수 없음")과 어긋나는 유일한 예외였음(교차검증에서
+    // 발견). 지금은 URL 매핑이 컨트롤러와 1:1로 일치해 당장 뚫리는 경로는 없지만, 나중에 매핑이
+    // 바뀌거나 같은 서비스 메서드가 다른 경로에서 재사용되면 로그인만 한 일반 회원도 호출
+    // 가능해지는 구조적 위험이라 서비스 계층에도 같은 원칙을 적용한다.
+    public static void requireAdmin() {
+        if (!isAdmin()) {
+            throw new AccessDeniedException("관리자만 접근할 수 있습니다.");
+        }
     }
 }

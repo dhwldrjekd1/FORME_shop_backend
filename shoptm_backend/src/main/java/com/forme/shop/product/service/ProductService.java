@@ -5,6 +5,7 @@ import com.forme.shop.product.dto.ProductResponseDto;
 import com.forme.shop.product.entity.Product;
 import com.forme.shop.product.entity.ProductSize;
 import com.forme.shop.product.repository.ProductRepository;
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.common.util.LikeEscapeUtil;
 import com.forme.shop.category.entity.Category;
 import com.forme.shop.category.repository.CategoryRepository;
@@ -155,6 +156,7 @@ public class ProductService {
     @Transactional(rollbackFor = Exception.class)
     public ProductResponseDto createProduct(ProductRequestDto.Create dto,
                                             List<MultipartFile> images) throws IOException {
+        SecurityUtil.requireAdmin();
         requireOriginalPriceNotBelowPrice(dto.getOriginalPrice(), dto.getPrice());
 
         // categoryId를 명시적으로 보냈는데 존재하지 않으면(오타, 이미 삭제된 카테고리 등) 조용히
@@ -275,6 +277,7 @@ public class ProductService {
     public ProductResponseDto updateProduct(Long id,
                                             ProductRequestDto.Update dto,
                                             List<MultipartFile> images) throws IOException {
+        SecurityUtil.requireAdmin();
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
@@ -372,6 +375,7 @@ public class ProductService {
     // 추천 전체 초기화 (모든 상품 대상)
     @Transactional
     public void resetAllRecommend() {
+        SecurityUtil.requireAdmin();
         List<Product> all = productRepository.findAll();
         for (Product p : all) {
             p.setIsRecommend(false);
@@ -382,6 +386,7 @@ public class ProductService {
     // 큐레이터 설정 전용 (추천 체크 + 큐레이터 이미지)
     @Transactional
     public ProductResponseDto setRecommend(Long productId, String curatorImageUrl) {
+        SecurityUtil.requireAdmin();
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
@@ -417,6 +422,7 @@ public class ProductService {
     // 큐레이터 해제 전용
     @Transactional
     public void unsetRecommend(Long productId) {
+        SecurityUtil.requireAdmin();
         Product product = productRepository.findById(productId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
         product.setIsRecommend(false);
@@ -428,6 +434,7 @@ public class ProductService {
     // (하드 삭제하면 이 상품을 참조하는 과거 주문/리뷰/Q&A/찜이 깨지거나 함께 사라짐)
     @Transactional
     public void deleteProduct(Long id) {
+        SecurityUtil.requireAdmin();
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
         product.setIsActive(false);
@@ -436,6 +443,7 @@ public class ProductService {
     // 상품 ID 변경 (네이티브 SQL)
     @Transactional
     public void changeProductId(Long oldId, Long newId) {
+        SecurityUtil.requireAdmin();
         if (oldId.equals(newId)) throw new IllegalArgumentException("동일한 ID입니다.");
         if (productRepository.existsById(newId)) throw new IllegalArgumentException("이미 존재하는 ID입니다: " + newId);
         if (!productRepository.existsById(oldId)) throw new IllegalArgumentException("존재하지 않는 상품입니다: " + oldId);

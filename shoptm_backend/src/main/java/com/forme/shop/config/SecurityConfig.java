@@ -56,10 +56,14 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         // 회원가입, 로그인은 누구나 접근 가능
                         .requestMatchers("/api/register", "/api/login").permitAll()
-                        // 상품 조회는 비로그인도 가능
-                        .requestMatchers("/api/products/**").permitAll()
-                        // 카테고리 조회는 비로그인도 가능
-                        .requestMatchers("/api/categories/**").permitAll()
+                        // 상품 조회는 비로그인도 가능 (등록/수정/삭제는 전부 /api/admin/products/**
+                        // 아래에 있어 바로 아래 "/api/admin/**" 규칙으로 걸림 — 그럼에도 다른
+                        // 조회 전용 경로들(게시판/댓글/Q&A/설정)과 똑같이 GET으로 범위를 좁혀서,
+                        // 나중에 비관리자 쓰기 엔드포인트가 /api/products/** 아래 실수로 추가되는
+                        // 경우까지 이 permitAll이 자동으로 열어주지 않게 한다(교차검증에서 발견).
+                        .requestMatchers(HttpMethod.GET, "/api/products/**").permitAll()
+                        // 카테고리 조회도 같은 이유로 GET만 비로그인 허용
+                        .requestMatchers(HttpMethod.GET, "/api/categories/**").permitAll()
                         // 게시판 조회는 비로그인도 가능 (수정/삭제는 로그인 필요 - 아래 authenticated()로 폴백)
                         .requestMatchers(HttpMethod.GET, "/api/boards/**").permitAll()
                         // 댓글 조회는 비로그인도 가능 (수정/삭제는 로그인 필요)

@@ -482,6 +482,7 @@ public class OrderService {
 
     // 관리자 - 전체 주문 목록 조회
     public List<OrderResponseDto> getAllOrders() {
+        SecurityUtil.requireAdmin();
         return orderRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
                 .map(OrderResponseDto::from)
@@ -494,12 +495,59 @@ public class OrderService {
     // 관리자 - 주문 상태 변경
     @Transactional
     public OrderResponseDto updateOrderStatus(Long orderId, OrderRequestDto.UpdateStatus dto) {
+        SecurityUtil.requireAdmin();
+        Orders orders = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+        return doUpdateOrderStatus(orders, dto);
+    }
+
+    // OrderExpiryScheduler가 참조하는 만료 기준(시간) — 스케줄러 자신의 조회(findIdsByStatus...)와
+    // 바로 아래 expireStalePendingOrder의 자체 재확인이 서로 다른 값을 쓰면 안 되므로 한 곳에만 둔다.
+    public static final long EXPIRY_HOURS = 24;
+
+    // 방치된 PENDING 데모 주문을 자동 만료시키는 배치(OrderExpiryScheduler)가 호출하는 경로 —
+    // 배치는 스케줄러 스레드에서 돌아 인증된 SecurityContext가 없으므로 updateOrderStatus의
+    // requireAdmin()을 거치면 항상 403으로 실패한다(교차검증에서 발견 — 관리자 메서드에
+    // 서비스단 검증을 추가하며 생긴 회귀). admin 검사를 건너뛰는 대신, "PENDING이고 cutoff보다
+    // 오래됨"이라는 조건을 findById로 미리 읽어서가 아니라 cancelIfStalePending의 원자적
+    // UPDATE WHERE절 자체에 못박아, 설령 이 메서드가 다른 곳에서 호출되더라도 그 조건을 만족
+    // 하는 주문 취소 이상의 일은 할 수 없게 만든다. 처음엔 findById로 미리 확인만 하고 실제
+    // 취소는 doUpdateOrderStatus의 느슨한 cancelIfNotCancelled로 처리했는데, 그 확인과 취소가
+    // 서로 다른 두 DB 호출이라 그 사이(검사 후 행동 사이의 시간차)에 실제로 결제가 확정돼
+    // PAID로 바뀐 주문까지 취소되고 환불까지 나갈 수 있는 레이스가 있었다(교차검증에서 재발견).
+    @Transactional
+    public OrderResponseDto expireStalePendingOrder(Long orderId) {
+        Orders orders = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+        List<OrderItem> items = new ArrayList<>(orders.getOrderItems());
+        // status가 PENDING이라고 해서 paidAt이 항상 비어있다고 믿으면 안 된다 — 정상 플로우에서는
+        // 맞지만, 관리자가 updateOrderStatus로 이미 PAID였던 주문의 status를 PENDING으로 직접
+        // 되돌리는 것도(updateStatusIfNotCancelled는 status만 바꿀 뿐 paidAt은 그대로 둠) 막혀있지
+        // 않다. 그런 주문이 생성된 지 오래됐다면 이 배치가 그걸 "방치된 PENDING"으로 잘못 집어서
+        // 취소할 수 있는데, 그때 결제가 실제로 됐었다는 사실(paidAt)을 무시하고 환불을 건너뛰면
+        // 돈은 그대로 받은 채 주문만 사라지는 사고가 난다(교차검증에서 발견) — 아래 원자적
+        // UPDATE 전에 미리 읽어둔 이 값으로 정확히 판단한다.
+        boolean wasPaid = orders.getPaidAt() != null;
+
+        LocalDateTime cutoff = LocalDateTime.now().minusHours(EXPIRY_HOURS);
+        int updated = orderRepository.cancelIfStalePending(orderId, cutoff);
+        if (updated == 0) {
+            throw new IllegalArgumentException("아직 만료 대상이 아닌 주문입니다.");
+        }
+        restoreStock(orderId, items);
+        refundIfPaidByToss(orderId, wasPaid, "방치된 PENDING 주문 자동 만료");
+
+        Orders fresh = orderRepository.findById(orderId)
+                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+        return OrderResponseDto.from(fresh);
+    }
+
+    private OrderResponseDto doUpdateOrderStatus(Orders orders, OrderRequestDto.UpdateStatus dto) {
         if (!VALID_ORDER_STATUSES.contains(dto.getStatus())) {
             throw new IllegalArgumentException("올바르지 않은 주문 상태입니다.");
         }
 
-        Orders orders = orderRepository.findById(orderId)
-                .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
+        Long orderId = orders.getId();
 
         if ("CANCELLED".equals(dto.getStatus())) {
             // 재고는 주문 생성 시점에 이미 차감돼 있으므로, 취소가 아니던 주문이 취소로

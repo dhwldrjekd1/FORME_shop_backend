@@ -136,6 +136,7 @@ public class ReviewService {
     // 관리자 답글
     @Transactional
     public ReviewResponseDto replyReview(Long reviewId, String reply) {
+        SecurityUtil.requireAdmin();
         Review review = reviewRepository.findById(reviewId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 리뷰입니다."));
         review.setReply(reply);
@@ -145,6 +146,7 @@ public class ReviewService {
 
     // 관리자 - 전체 리뷰 목록 조회
     public List<ReviewResponseDto> getAllReviews() {
+        SecurityUtil.requireAdmin();
         return reviewRepository.findAllByOrderByCreatedAtDesc()
                 .stream()
                 .map(ReviewResponseDto::from)

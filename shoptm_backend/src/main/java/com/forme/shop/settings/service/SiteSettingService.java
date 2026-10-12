@@ -1,5 +1,6 @@
 package com.forme.shop.settings.service;
 
+import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.settings.entity.SiteSetting;
 import com.forme.shop.settings.repository.SiteSettingRepository;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +22,7 @@ public class SiteSettingService {
 
     @Transactional
     public void setValue(String key, String value) {
+        SecurityUtil.requireAdmin();
         repository.upsertSetting(key, value);
     }
 }
