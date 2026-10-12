@@ -303,11 +303,14 @@ public class OrderService {
         }
 
         if (!newGrade.equals(member.getGrade())) {
-            member.setGrade(newGrade);
             // 이 시점의 member는 위 decreaseStockIfAvailable()의 clearAutomatically=true로
-            // 영속성 컨텍스트가 비워지면서 이미 detach된 상태라, 더티 체킹으로는 저장되지 않는다.
-            // (그래서 명시적으로 save 해야 함 - detached 엔티티도 id가 있으면 merge로 정상 반영됨)
-            memberRepository.save(member);
+            // 영속성 컨텍스트가 비워지면서 이미 detach된 상태다. 예전엔 member.setGrade() 후
+            // memberRepository.save(member)(merge)로 저장했는데, merge는 이 detached 스냅샷의
+            // 모든 컬럼을 그대로 DB에 덮어쓴다 — member를 읽어온(createOrder 맨 앞) 시점과 지금
+            // 사이에 다른 요청이 이 회원의 비밀번호/전화번호/주소 등을 바꿔 커밋했다면, 그 변경이
+            // 조용히 예전 값으로 되돌아간다(교차검증에서 발견). grade 컬럼만 원자적으로 갱신해
+            // 그 문제를 피한다.
+            memberRepository.updateGrade(member.getId(), newGrade);
         }
     }
 

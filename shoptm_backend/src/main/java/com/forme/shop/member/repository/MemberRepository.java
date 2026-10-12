@@ -2,6 +2,7 @@ package com.forme.shop.member.repository;
 
 import com.forme.shop.member.entity.Member;  // 반드시 우리 Member 클래스 import
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -38,4 +39,14 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     @Query("SELECT m FROM Member m WHERE m.name LIKE CONCAT('%', :keyword, '%') ESCAPE '\\' " +
            "OR m.email LIKE CONCAT('%', :keyword, '%') ESCAPE '\\'")
     List<Member> searchByNameOrEmail(@Param("keyword") String escapedKeyword);
+
+    // grade 한 컬럼만 원자적으로 바꾼다 (OrderService.updateMemberGrade 전용).
+    // 거기서 로드해 들고 있는 member는 그 사이 decreaseStockIfAvailable()의
+    // clearAutomatically=true로 이미 detach된 상태라, memberRepository.save(member)(merge)를
+    // 쓰면 이 member 변수가 로드된 시점 이후 다른 요청(예: 회원정보 수정, 비밀번호 변경)이
+    // 커밋한 다른 모든 컬럼까지 그 스냅샷 값으로 통째로 덮어써버린다. grade만 UPDATE해서
+    // 그 문제를 피한다.
+    @Modifying
+    @Query("UPDATE Member m SET m.grade = :grade WHERE m.id = :id")
+    int updateGrade(@Param("id") Long id, @Param("grade") String grade);
 }

@@ -8,6 +8,7 @@ import com.forme.shop.member.dto.MemberResponseDto;
 import com.forme.shop.member.entity.Member;  // 반드시 우리 Member 클래스 import
 import com.forme.shop.member.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -49,8 +50,15 @@ public class MemberService {
                 .fit(dto.getFit())
                 .build();
 
-        // DB에 저장 후 DTO로 변환해서 반환
-        return MemberResponseDto.from(memberRepository.save(member));
+        // DB에 저장 후 DTO로 변환해서 반환. 위의 existsByEmail 확인과 이 save() 사이에 같은
+        // 이메일로 동시에 들어온 다른 가입 요청이 먼저 커밋되면(둘 다 중복확인을 통과하는 TOCTOU),
+        // email 컬럼의 DB 유니크 제약이 실제 중복 저장은 막아주지만 그 경우 예외가 날것의 500으로
+        // 노출된다 — 다른 이메일을 쓰라는 안내로 바꿔준다.
+        try {
+            return MemberResponseDto.from(memberRepository.save(member));
+        } catch (DataIntegrityViolationException e) {
+            throw new IllegalArgumentException("이미 사용 중인 이메일입니다.");
+        }
     }
 
     // 회원 단건 조회 (마이페이지)
