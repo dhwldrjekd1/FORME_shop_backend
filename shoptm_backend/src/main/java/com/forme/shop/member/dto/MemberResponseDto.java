@@ -22,6 +22,7 @@ public class MemberResponseDto {
     private String fit;
     private String role;
     private String grade;
+    private Boolean gradeManual;
     private Boolean isActive;
     private LocalDateTime createdAt;
     // password는 보안상 응답에 포함하지 않음
@@ -40,6 +41,7 @@ public class MemberResponseDto {
                 .fit(member.getFit())
                 .role(member.getRole())
                 .grade(member.getGrade())
+                .gradeManual(member.getGradeManual())
                 .isActive(member.getIsActive())
                 .createdAt(member.getCreatedAt())
                 .build();

@@ -61,8 +61,19 @@ public class Member {
     @Builder.Default
     @Column(nullable = false, length = 20)
     private String grade = "BRONZE";
-    // 회원 등급 (관리자가 수동 변경)
+    // 회원 등급 — 관리자가 MemberService.changeGrade()로 수동 지정하거나, 주문 완료 시
+    // OrderService.updateMemberGrade()가 누적 구매액 기준으로 자동 계산해 바꿈
     // BRONZE(기본) → SILVER → GOLD → VIP
+
+    @Builder.Default
+    @Column(nullable = false)
+    private Boolean gradeManual = false;
+    // true면 관리자가 changeGrade()로 등급을 직접 지정했다는 뜻 — 그 뒤로는
+    // OrderService.updateMemberGrade()의 구매액 기반 자동 재계산이 이 회원의 grade를
+    // 건드리지 않는다(관리자가 올려준 VIP를 다음 결제 한 번에 조용히 되돌리던 문제를 막음).
+    // 다시 자동 계산을 받게 하려면 관리자가 changeGrade()를 한 번 더 호출해 원하는 값으로
+    // 맞춰주면 됨(이 플래그를 끄는 별도 기능은 없음 — 관리자가 명시적으로 등급을 정한 이상
+    // 그 결정이 계속 유효해야 한다는 쪽으로 설계).
 
     @Builder.Default
     @Column(nullable = false)

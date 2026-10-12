@@ -264,5 +264,10 @@ public class MemberService {
         Member member = memberRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 회원입니다."));
         member.setGrade(grade);
+        // 관리자가 등급을 직접 지정했다는 것을 남겨, 이후 주문 완료 시 OrderService.
+        // updateMemberGrade()의 구매액 기반 자동 재계산이 이 값을 덮어쓰지 않게 한다
+        // (Member.gradeManual 필드 주석 참고 — 교차검증에서 "관리자가 VIP로 올려줘도 다음
+        // 결제 한 번에 자동으로 되돌아간다"는 지적을 받아 추가).
+        member.setGradeManual(true);
     }
 }

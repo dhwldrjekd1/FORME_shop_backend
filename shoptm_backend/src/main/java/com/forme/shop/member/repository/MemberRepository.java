@@ -46,7 +46,12 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     // 쓰면 이 member 변수가 로드된 시점 이후 다른 요청(예: 회원정보 수정, 비밀번호 변경)이
     // 커밋한 다른 모든 컬럼까지 그 스냅샷 값으로 통째로 덮어써버린다. grade만 UPDATE해서
     // 그 문제를 피한다.
+    // WHERE에 gradeManual = false도 넣어 "관리자가 수동 지정한 등급은 자동 재계산이 건드리지
+    // 않는다"는 조건 자체를 원자적 UPDATE에 못박는다 — 호출부가 들고 있는 member.getGradeManual()
+    // 값으로 미리 판단하면, 그 member를 읽어온 시점과 지금 사이에 관리자가 막 changeGrade()를
+    // 호출해 gradeManual을 true로 바꿨어도 그 변경을 못 보고 자동 재계산을 그대로 진행해버리는
+    // 레이스가 생긴다(교차검증에서 발견) — 조건을 DB 쪽에 두면 항상 최신 값으로 판단된다.
     @Modifying
-    @Query("UPDATE Member m SET m.grade = :grade WHERE m.id = :id")
-    int updateGrade(@Param("id") Long id, @Param("grade") String grade);
+    @Query("UPDATE Member m SET m.grade = :grade WHERE m.id = :id AND m.gradeManual = false")
+    int updateGradeIfNotManual(@Param("id") Long id, @Param("grade") String grade);
 }

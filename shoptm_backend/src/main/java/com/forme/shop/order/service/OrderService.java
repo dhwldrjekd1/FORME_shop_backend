@@ -309,8 +309,12 @@ public class OrderService {
             // 모든 컬럼을 그대로 DB에 덮어쓴다 — member를 읽어온(createOrder 맨 앞) 시점과 지금
             // 사이에 다른 요청이 이 회원의 비밀번호/전화번호/주소 등을 바꿔 커밋했다면, 그 변경이
             // 조용히 예전 값으로 되돌아간다(교차검증에서 발견). grade 컬럼만 원자적으로 갱신해
-            // 그 문제를 피한다.
-            memberRepository.updateGrade(member.getId(), newGrade);
+            // 그 문제를 피한다. updateGradeIfNotManual의 WHERE절이 gradeManual=false까지 함께
+            // 확인하므로, 관리자가 MemberService.changeGrade()로 등급을 수동 지정해둔 회원은
+            // (이 member 스냅샷이 그 사실을 아직 모르고 있어도) 이 UPDATE가 조용히 0건 처리되어
+            // 자동 재계산이 적용되지 않는다 — "관리자가 VIP로 올려줘도 다음 결제 한 번에 자동으로
+            // 되돌아간다"는 문제를 막기 위함(교차검증에서 발견).
+            memberRepository.updateGradeIfNotManual(member.getId(), newGrade);
         }
     }
 

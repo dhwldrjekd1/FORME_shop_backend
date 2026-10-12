@@ -266,6 +266,7 @@ CREATE TABLE public.member (
     address character varying(255),
     role character varying(20) DEFAULT 'ROLE_USER'::character varying NOT NULL,
     grade character varying(20) DEFAULT 'BRONZE'::character varying NOT NULL,
+    grade_manual boolean DEFAULT false NOT NULL,
     is_active boolean DEFAULT true NOT NULL,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
     updated_at timestamp without time zone DEFAULT now() NOT NULL,
