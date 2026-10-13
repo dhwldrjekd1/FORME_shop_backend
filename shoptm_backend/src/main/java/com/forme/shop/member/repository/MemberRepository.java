@@ -2,9 +2,11 @@ package com.forme.shop.member.repository;
 
 import com.forme.shop.member.entity.Member;  // 반드시 우리 Member 클래스 import
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import jakarta.persistence.LockModeType;
 
 import java.util.List;
 import java.util.Optional;
@@ -54,4 +56,15 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     @Modifying
     @Query("UPDATE Member m SET m.grade = :grade WHERE m.id = :id AND m.gradeManual = false")
     int updateGradeIfNotManual(@Param("id") Long id, @Param("grade") String grade);
+
+    // OrderService.updateMemberGrade 전용: 같은 회원이 거의 동시에 두 개의 주문을 완료하면,
+    // 각 트랜잭션이 READ COMMITTED 기준으로 서로의(아직 커밋 안 된) 주문을 못 보고 누적
+    // 구매액을 계산해서, 둘을 합치면 등급 상향 임계값을 넘는데도 양쪽 다 상향을 건너뛰는
+    // 일이 있었다(다음 주문에서 결국 정정되긴 하지만 그만큼 늦어짐 — 교차검증에서 발견).
+    // 이 회원 row에 PESSIMISTIC_WRITE 락을 걸어, 두 번째 트랜잭션이 첫 번째가 커밋할 때까지
+    // 기다리게 만든다 — 그 뒤에야 누적 구매액을 다시 읽으므로(READ COMMITTED는 문장마다 새로
+    // 커밋된 데이터를 보므로) 그 시점에는 첫 번째 주문이 이미 반영된 금액을 보게 된다.
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT m FROM Member m WHERE m.id = :id")
+    Optional<Member> findByIdForUpdate(@Param("id") Long id);
 }

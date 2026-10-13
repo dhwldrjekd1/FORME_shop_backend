@@ -277,6 +277,14 @@ public class OrderService {
 
     // 누적 구매 금액 계산 → 등급 자동 변경
     private void updateMemberGrade(Member member) {
+        // 같은 회원이 거의 동시에 두 주문을 완료하면, 아래 totalSpent 계산이 서로의(아직 커밋
+        // 안 된) 주문을 못 보고 각자 따로 진행돼 — 둘을 합치면 등급 상향 임계값을 넘는데도
+        // 양쪽 다 상향을 건너뛸 수 있었다(교차검증에서 발견, 다음 주문에서 정정되긴 하지만
+        // 그만큼 늦어짐). 이 회원 row를 먼저 잠궈서(PESSIMISTIC_WRITE) 두 번째 트랜잭션이
+        // 첫 번째가 커밋할 때까지 기다리게 만들면, 그 다음 totalSpent를 다시 읽을 때는 이미
+        // 첫 번째 주문이 반영된 값을 보게 된다.
+        memberRepository.findByIdForUpdate(member.getId());
+
         // 실제로 결제됐고, 그 뒤 취소/환불도 안 된 주문 금액만 합산한다.
         // - paidAt이 있어야 함: PENDING(결제 없는 데모 주문)은 애초에 결제 자체가 없으므로
         //   status만으로 걸러내면(예전엔 CANCELLED만 제외) 그 금액까지 누적 구매액에 들어가,
