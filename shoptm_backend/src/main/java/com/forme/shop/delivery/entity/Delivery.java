@@ -67,4 +67,13 @@ public class Delivery {
     @UpdateTimestamp
     @Column(nullable = false)
     private LocalDateTime updatedAt;
+
+    // DeliveryService.updateDelivery()의 expectedUpdatedAt 확인은 "읽은 뒤 쓰기 전" 사이의
+    // 시간차에만 걸리는 애플리케이션 레벨 사전 확인이라, 두 요청이 거의 동시에 들어와 둘 다
+    // 그 확인을 통과한 뒤에야 쓰는 진짜 동시 레이스는 못 막는다(교차검증에서 발견). @Version은
+    // Hibernate가 매 UPDATE마다 "WHERE version = 읽은 값"을 자동으로 붙이고 실패(영향받은 행
+    // 0개)하면 예외를 던지게 해줘서, 그 좁은 틈까지 DB 차원에서 막아주는 진짜 낙관적 락이다.
+    @Version
+    @Column(nullable = false)
+    private Long version;
 }

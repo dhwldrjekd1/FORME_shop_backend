@@ -5,6 +5,8 @@ import jakarta.validation.constraints.Pattern;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.time.LocalDateTime;
+
 public class DeliveryRequestDto {
 
     // 배송 정보 등록 요청 DTO (관리자)
@@ -38,5 +40,13 @@ public class DeliveryRequestDto {
         @Pattern(regexp = "READY|IN_TRANSIT|OUT_FOR_DELIVERY|DELIVERED", message = "배송 상태 값이 올바르지 않습니다.")
         private String status;
         // READY / IN_TRANSIT / OUT_FOR_DELIVERY / DELIVERED
+
+        // ProductService.updateProduct()의 expectedUpdatedAt과 같은 목적. AdminOrders.vue가
+        // updateDelivery 호출마다 현재 화면에 보이는 상태 전체를 그대로 다시 보내는 구조라,
+        // 관리자가 이 배송 건의 관리 화면을 열어둔 사이(또는 다른 관리자가 동시에) 상태가 먼저
+        // 바뀌면, 그 변경을 못 보고 화면을 연 시점의 오래된 상태로 덮어쓸 수 있다(이중클릭,
+        // 또는 서로 다른 관리자의 동시 처리 — 교차검증에서 발견). null이면(구버전 클라이언트 등)
+        // 이 확인을 건너뛴다.
+        private LocalDateTime expectedUpdatedAt;
     }
 }

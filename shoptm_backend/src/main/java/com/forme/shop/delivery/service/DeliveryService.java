@@ -81,6 +81,15 @@ public class DeliveryService {
         Delivery delivery = deliveryRepository.findById(deliveryId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 배송 정보입니다."));
 
+        // 관리자가 이 배송 건의 화면을 열어둔 사이(이중클릭, 또는 다른 관리자의 동시 처리)에
+        // 상태가 이미 바뀌었으면 그 변경을 덮어쓰지 않고 거부한다 — ProductService.updateProduct()
+        // 와 동일한 이유(교차검증에서 발견). expectedUpdatedAt이 없으면(구버전 클라이언트 등)
+        // 이 확인을 건너뛴다.
+        if (dto.getExpectedUpdatedAt() != null && !dto.getExpectedUpdatedAt().equals(delivery.getUpdatedAt())) {
+            throw new IllegalArgumentException(
+                    "다른 곳에서 이미 이 배송 정보가 변경되었습니다. 새로고침 후 다시 시도해주세요.");
+        }
+
         // null 체크 후 값이 있을 때만 수정
         if (dto.getCarrier()        != null) delivery.setCarrier(dto.getCarrier());
         if (dto.getTrackingNumber() != null) delivery.setTrackingNumber(dto.getTrackingNumber());
@@ -110,6 +119,17 @@ public class DeliveryService {
             }
         }
 
+        // saveAndFlush로 이 자리에서 즉시 UPDATE를 실행한다. 두 가지 이유: (1) 위의
+        // expectedUpdatedAt 확인은 "읽은 뒤 쓰기 전" 사이의 시간차에만 걸리는 애플리케이션
+        // 레벨 사전 확인이라, 두 요청이 거의 동시에 들어와 둘 다 그 확인을 통과한 뒤에야 쓰는
+        // 진짜 동시 레이스는 못 막는데, @Version이 바로 이 UPDATE에 "WHERE version = 읽은 값"을
+        // 자동으로 붙여 그 틈까지 DB 차원에서 막아준다(실패하면 OptimisticLockingFailureException,
+        // GlobalExceptionHandler에서 같은 안내 메시지로 처리). (2) saveAndFlush 없이 더티체킹에만
+        // 맡기면 커밋이 이 메서드 반환 이후에야 일어나서, 바로 아래 응답에 담기는 updatedAt이
+        // 이번 수정이 반영되기 전의 값이 된다 — 그러면 바로 다음 수정 요청이 그 (이미 틀린)
+        // updatedAt을 expectedUpdatedAt으로 그대로 돌려보내 아무도 안 건드렸는데도 "다른 곳에서
+        // 이미 변경됨" 오류가 나는 모순이 생긴다(교차검증에서 발견).
+        deliveryRepository.saveAndFlush(delivery);
         return DeliveryResponseDto.from(delivery);
     }
 }

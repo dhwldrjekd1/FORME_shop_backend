@@ -188,7 +188,8 @@ CREATE TABLE public.deliveries (
     shipped_at timestamp without time zone,
     delivered_at timestamp without time zone,
     created_at timestamp without time zone DEFAULT now() NOT NULL,
-    updated_at timestamp without time zone DEFAULT now() NOT NULL
+    updated_at timestamp without time zone DEFAULT now() NOT NULL,
+    version bigint DEFAULT 0 NOT NULL
 );
 
 

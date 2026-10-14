@@ -18,6 +18,8 @@ public class DeliveryResponseDto {
     private LocalDateTime shippedAt;    // 발송 시간
     private LocalDateTime deliveredAt;  // 배송 완료 시간
     private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;    // 수정 시간 — updateDelivery 요청의 expectedUpdatedAt에
+                                         // 그대로 실어 보내 동시수정 충돌을 감지하는 데 쓰임
 
     // Delivery 엔티티를 DeliveryResponseDto 로 변환하는 정적 메서드
     public static DeliveryResponseDto from(Delivery delivery) {
@@ -30,6 +32,7 @@ public class DeliveryResponseDto {
                 .shippedAt(delivery.getShippedAt())
                 .deliveredAt(delivery.getDeliveredAt())
                 .createdAt(delivery.getCreatedAt())
+                .updatedAt(delivery.getUpdatedAt())
                 .build();
     }
 }

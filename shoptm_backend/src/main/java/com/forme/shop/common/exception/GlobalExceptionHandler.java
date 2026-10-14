@@ -3,6 +3,7 @@ package com.forme.shop.common.exception;
 import com.forme.shop.common.dto.ErrorResponseDto;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
@@ -99,6 +100,24 @@ public class GlobalExceptionHandler {
                 .body(ErrorResponseDto.builder()
                         .status(400)
                         .message("요청 형식이 올바르지 않습니다.")  // 파싱 실패 원문 메시지는 서버 로그에만 남김
+                        .timestamp(LocalDateTime.now())
+                        .build());
+    }
+
+    // @Version(낙관적 락) 충돌 — 같은 행을 동시에 수정한 두 요청 중 나중에 커밋을 시도한 쪽에서
+    // 발생. Delivery.version 참고(배송 상태를 두 관리자가 거의 동시에 바꿀 때를 막기 위해 도입).
+    // ProductService/DeliveryService의 expectedUpdatedAt 사전 확인과 같은 상황이라 같은 안내로
+    // 응답한다 — 사전 확인은 "읽은 뒤 쓰기 전"에만 걸리고, 이 예외는 그보다 더 좁은, 두 요청이
+    // 거의 동시에 들어와 사전 확인까지는 둘 다 통과한 뒤에야 걸리는 진짜 동시 레이스를 잡는다.
+    @ExceptionHandler(OptimisticLockingFailureException.class)
+    public ResponseEntity<ErrorResponseDto> handleOptimisticLockingFailureException(
+            OptimisticLockingFailureException ex) {
+
+        return ResponseEntity
+                .status(HttpStatus.CONFLICT)  // 409
+                .body(ErrorResponseDto.builder()
+                        .status(409)
+                        .message("다른 곳에서 이미 변경되었습니다. 새로고침 후 다시 시도해주세요.")
                         .timestamp(LocalDateTime.now())
                         .build());
     }
