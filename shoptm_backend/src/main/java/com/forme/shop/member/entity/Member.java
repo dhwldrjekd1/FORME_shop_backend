@@ -57,6 +57,12 @@ public class Member {
     // ROLE_USER  = 일반 회원 (기본값)
     // ROLE_ADMIN = 관리자
     // Spring Security 에서 hasAuthority("ROLE_ADMIN") 으로 관리자 체크
+    //
+    // 이 값을 바꾸는 메서드가 지금은 아예 없음(가입 시 기본값 그대로 고정). 만약 나중에
+    // "관리자 권한 부여/회수" 기능을 추가한다면 JwtFilter.java의 관련 주석을 반드시 같이
+    // 보고 tokenBlacklistService.revokeAllForEmail(email)을 함께 호출해야 함 — JwtFilter가
+    // role을 토큰에서 그대로 믿고 DB를 매 요청마다 재조회하지 않아서, 그걸 빠뜨리면 강등된
+    // 관리자가 기존 토큰 만료 시각(최대 24시간)까지 계속 ROLE_ADMIN으로 행세할 수 있다.
 
     @Builder.Default
     @Column(nullable = false, length = 20)
