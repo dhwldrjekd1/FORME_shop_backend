@@ -52,21 +52,35 @@ public interface OrderRepository extends JpaRepository<Orders, Long> {
     List<Long> findIdsByStatusAndCreatedAtBefore(@Param("status") String status, @Param("cutoff") LocalDateTime cutoff);
 
     // SELECT * FROM orders WHERE member_id = ? ORDER BY created_at DESC
-    // 특정 회원의 주문 목록 최신순 조회
+    // OrderService.updateMemberGrade() 전용 — paidAt/status/totalPrice 스칼라 값만 읽고
+    // member/orderItems/product는 안 건드리므로 fetch join이 필요 없다. 목록 화면용으로는
+    // 바로 아래 findByMemberIdWithDetailsOrderByCreatedAtDesc를 쓴다.
     List<Orders> findByMemberIdOrderByCreatedAtDesc(Long memberId);
-
-    // SELECT * FROM orders ORDER BY created_at DESC
-    // 관리자 - 전체 주문 목록 최신순 조회
-    List<Orders> findAllByOrderByCreatedAtDesc();
 
     // 관리자 대시보드 전용 - member/orderItems/orderItems.product를 한 번에 JOIN FETCH.
     // AdminService.getDashboard()가 브랜드별 매출을 집계하며 주문마다 orderItems를,
     // 주문상품마다 product를 읽어서 LAZY 관계 그대로면 주문 수만큼 N+1이 발생했음.
     // 컬렉션(orderItems)을 JOIN FETCH하면 행이 중복될 수 있어 DISTINCT로 정리.
+    //
+    // OrderService.getAllOrders()(관리자 전체 주문 목록)도 OrderResponseDto.from()에서
+    // 주문마다 member, orderItems, 품목마다 product를 읽어 똑같은 N+1이 났었는데(교차검증에서
+    // 발견 — 이 메서드가 대시보드용으로 이미 존재하는데도 주문 목록 API 쪽엔 적용이 안 돼
+    // 있었음), 그대로 재사용한다.
     @Query("SELECT DISTINCT o FROM Orders o " +
             "LEFT JOIN FETCH o.member " +
             "LEFT JOIN FETCH o.orderItems oi " +
             "LEFT JOIN FETCH oi.product " +
             "ORDER BY o.createdAt DESC")
     List<Orders> findAllWithDetailsOrderByCreatedAtDesc();
+
+    // OrderService.getMyOrders()(내 주문 목록) 전용 — 위와 같은 이유로 member/orderItems/
+    // orderItems.product를 한 번에 JOIN FETCH한다. member는 항상 호출한 그 회원 한 명뿐이라
+    // fetch join 없이도 N+1은 안 나지만, orderItems/product는 주문·품목 수만큼 났었다.
+    @Query("SELECT DISTINCT o FROM Orders o " +
+            "LEFT JOIN FETCH o.member " +
+            "LEFT JOIN FETCH o.orderItems oi " +
+            "LEFT JOIN FETCH oi.product " +
+            "WHERE o.member.id = :memberId " +
+            "ORDER BY o.createdAt DESC")
+    List<Orders> findByMemberIdWithDetailsOrderByCreatedAtDesc(@Param("memberId") Long memberId);
 }

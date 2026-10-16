@@ -331,7 +331,7 @@ public class OrderService {
         // 본인(또는 관리자)의 주문 목록만 조회 가능
         memberService.findSelfOrAdminMember(memberId);
 
-        return orderRepository.findByMemberIdOrderByCreatedAtDesc(memberId)
+        return orderRepository.findByMemberIdWithDetailsOrderByCreatedAtDesc(memberId)
                 .stream()
                 .map(OrderResponseDto::from)
                 .collect(Collectors.toList());
@@ -495,7 +495,7 @@ public class OrderService {
     // 관리자 - 전체 주문 목록 조회
     public List<OrderResponseDto> getAllOrders() {
         SecurityUtil.requireAdmin();
-        return orderRepository.findAllByOrderByCreatedAtDesc()
+        return orderRepository.findAllWithDetailsOrderByCreatedAtDesc()
                 .stream()
                 .map(OrderResponseDto::from)
                 .collect(Collectors.toList());
