@@ -522,6 +522,12 @@ src/main/java/com/forme/shop/
 - **처리**: 코드를 바꾸지 않고(존재하지 않는 기능을 위해 미리 코드를 만드는 건 과잉이라고 판단), `JwtFilter.java`의 role 추출 지점과 `Member.java`의 `role` 필드 주석에 "나중에 관리자 권한 부여/회수 기능을 추가한다면, `banMember()`/`withdraw()`가 하듯 `tokenBlacklistService.revokeAllForEmail(email)`을 반드시 함께 호출해야 한다 — 안 그러면 강등된 관리자가 기존 토큰 만료 시각(최대 24시간)까지 계속 `ROLE_ADMIN`으로 행세할 수 있다"는 내용을 명시적으로 남겨둠. 배포 대상 코드 동작은 전혀 바뀌지 않아 별도 배포·테스트는 하지 않음.
 ---
 
+### 관리자 전체 주문목록/내 주문목록 조회에 N+1 쿼리가 있었음 (2026.10.17)
+- **문제**: `OrderService.getAllOrders()`(관리자)/`getMyOrders()`(본인·관리자)가 `OrderResponseDto.from()`으로 변환할 때 주문마다 `member`, `orderItems`, 품목마다 `product`를 LAZY 연관관계로 읽어 N+1 쿼리가 발생했음(주문 N건 × 상품 M개면 대략 `1 + N(member) + N(orderItems) + N*M(product)` 쿼리). 같은 문제를 관리자 대시보드(`AdminService.getDashboard()`)는 이미 `LEFT JOIN FETCH` + `DISTINCT`로 고쳐둔 상태였는데, 그 바로 옆에 있는 주문목록 API 2곳만 적용이 빠져있었음. 주문 수가 늘어날수록 요청 하나가 수천~수만 쿼리를 날리게 되는 구조라, 데이터가 쌓이면 가장 먼저 느려질 지점이었음.
+- **해결**: `getAllOrders()`는 기존 `findAllWithDetailsOrderByCreatedAtDesc()`(이미 있던 대시보드용 fetch join 쿼리)를 그대로 재사용하도록 변경. `getMyOrders()`용으로는 같은 패턴에 `member_id` 조건만 추가한 `findByMemberIdWithDetailsOrderByCreatedAtDesc()`를 신설. 더 이상 아무도 안 쓰게 된 `findAllByOrderByCreatedAtDesc()`는 삭제(죽은 코드 정리). `OrderService.updateMemberGrade()`가 쓰는 `findByMemberIdOrderByCreatedAtDesc()`는 `paidAt`/`status`/`totalPrice` 스칼라 값만 읽어 fetch join이 필요 없어 그대로 둠.
+- **검증**: 임시 포트(8399)에서 Hibernate SQL 로깅을 켜고(`--spring.jpa.show-sql=true`) 실제 쿼리 수를 직접 셈. 테스트 회원에게 주문 3건(각 2개 품목, 총 6개 `order_items`)을 만들어 `getMyOrders()` 호출 → 쿼리 2건만 발생(수정 전이었다면 주문·품목 수에 비례해 늘어났을 상황). 같은 계정을 관리자로 바꿔 운영 DB의 실제 전체 주문(70건 이상)을 대상으로 `getAllOrders()` 호출 → 역시 쿼리 2건만 발생 — 주문 건수와 무관하게 평평한(flat) 쿼리 수임을 확인. 테스트 데이터 모두 삭제, 배포 후 실제 라이브 정상 동작 확인.
+---
+
 ## 빌드 및 배포
 
 ```bash
