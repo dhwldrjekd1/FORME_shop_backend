@@ -18,9 +18,13 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     // 잠금(optimistic lock)이 이 값을 근거로 "내가 폼을 연 뒤로 이 상품에 뭔가 바뀌었는지"를
     // 판단하는 데 쓰인다. 벌크 UPDATE는 @UpdateTimestamp의 엔티티 setter 경로를 안 타므로
     // 여기서 직접 세팅해야 함(OrderRepository의 취소 쿼리들과 동일한 이유).
+    // WHERE에 isActive = true도 넣어, OrderService.createOrder()의 애플리케이션 레벨
+    // isActive 사전 확인과 이 원자적 차감 사이(검사-후-행동 사이의 시간차)에 관리자가 상품을
+    // 삭제해도 재고가 차감되는 일이 없게 한다 — 이 메서드의 유일한 호출부가 그 사전 확인
+    // 바로 다음 줄이라 안전하게 조건을 추가할 수 있었다(교차검증에서 발견).
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Product p SET p.stock = p.stock - :quantity, p.updatedAt = CURRENT_TIMESTAMP " +
-            "WHERE p.id = :productId AND p.stock >= :quantity")
+            "WHERE p.id = :productId AND p.stock >= :quantity AND p.isActive = true")
     int decreaseStockIfAvailable(@Param("productId") Long productId, @Param("quantity") Integer quantity);
 
     // 주문 취소 시 재고 복구 — 위와 같은 이유로 원자적 UPDATE로 처리한다.
@@ -33,6 +37,12 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     @Query("UPDATE Product p SET p.stock = p.stock + :quantity, p.updatedAt = CURRENT_TIMESTAMP " +
             "WHERE p.id = :productId")
     int increaseStock(@Param("productId") Long productId, @Param("quantity") Integer quantity);
+
+    // 장바구니/찜 담기 전용 존재 확인 — 단순 existsById만 쓰면 이미 소프트 삭제(isActive=false)
+    // 된 상품도 productId만 알면 그대로 담을 수 있었다(ProductService.getProduct()는 이미
+    // isActive를 확인해 상품 상세 페이지에서는 막혀 있는데, 장바구니/찜 담기 경로만 빠져있던
+    // 것 — 교차검증에서 발견).
+    boolean existsByIdAndIsActiveTrue(Long id);
 
     // SELECT * FROM products WHERE is_active = true
     // 삭제되지 않은 전체 상품 목록 조회

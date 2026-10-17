@@ -43,8 +43,11 @@ public class CartService {
         // 본인(또는 관리자)의 장바구니에만 담을 수 있음
         memberService.findSelfOrAdminMember(memberId);
 
-        // 상품 존재 여부 확인
-        if (!productRepository.existsById(dto.getProductId())) {
+        // 상품 존재 여부 확인 — 삭제(비활성화)된 상품은 존재하지 않는 것과 동일하게 취급한다.
+        // isActive를 안 보면 관리자가 삭제한 상품도 productId만 알면 그대로 담을 수 있었다
+        // (교차검증에서 발견 — 상품 상세 페이지는 ProductService.getProduct()가 이미 isActive를
+        // 확인해 막아두는데, 장바구니 담기 경로만 빠져있었음).
+        if (!productRepository.existsByIdAndIsActiveTrue(dto.getProductId())) {
             throw new IllegalArgumentException("존재하지 않는 상품입니다.");
         }
 

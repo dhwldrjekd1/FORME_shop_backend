@@ -125,6 +125,15 @@ public class OrderService {
                 Product product = productRepository.findById(itemDto.getProductId())
                         .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
 
+                // 관리자가 삭제(isActive=false) 처리한 상품은 재고가 남아있어도 주문할 수 없다.
+                // ProductService.getProduct()는 상품 상세 페이지에서 이미 이 확인을 하는데,
+                // 장바구니에 먼저 담아둔 뒤 그 상품이 삭제되면 장바구니/주문 생성 경로에는 같은
+                // 확인이 없어 그대로 결제까지 완료될 수 있었다(교차검증에서 발견). 재고 차감
+                // 직전에 확인해야, 이 확인과 차감 사이에 다른 요청이 끼어들 여지를 최소화한다.
+                if (!product.getIsActive()) {
+                    throw new IllegalArgumentException(product.getName() + "은(는) 더 이상 판매하지 않는 상품입니다.");
+                }
+
                 // 재고 확인 + 차감을 원자적 UPDATE 한 번으로 처리 (동시 주문으로 인한 오버셀 방지)
                 int updated = productRepository.decreaseStockIfAvailable(product.getId(), itemDto.getQuantity());
                 if (updated == 0) {
