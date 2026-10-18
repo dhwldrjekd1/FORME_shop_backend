@@ -96,6 +96,12 @@ public class QnaService {
         if (dto.getProductId() != null) {
             product = productRepository.findById(dto.getProductId())
                     .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));
+            // 삭제(비활성화)된 상품은 존재하지 않는 것과 동일하게 취급한다 — ReviewService.
+            // createReview와 동일한 이유(교차검증에서 발견, 삭제된 상품에 새로 문의를 다는
+            // 것까지 막기로 결정).
+            if (!product.getIsActive()) {
+                throw new IllegalArgumentException("존재하지 않는 상품입니다.");
+            }
         }
 
         Qna qna = Qna.builder()

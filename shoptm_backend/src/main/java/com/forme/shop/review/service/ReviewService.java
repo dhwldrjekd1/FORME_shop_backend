@@ -55,7 +55,9 @@ public class ReviewService {
         // 본인(또는 관리자) 명의로만 리뷰 작성 가능
         memberService.findSelfOrAdminMember(memberId);
 
-        if (!productRepository.existsById(dto.getProductId())) {
+        // 삭제(비활성화)된 상품은 존재하지 않는 것과 동일하게 취급한다 — CartService.addCart와
+        // 동일한 이유(교차검증에서 발견, 삭제된 상품에 새로 리뷰를 다는 것까지 막기로 결정).
+        if (!productRepository.existsByIdAndIsActiveTrue(dto.getProductId())) {
             throw new IllegalArgumentException("존재하지 않는 상품입니다.");
         }
 
