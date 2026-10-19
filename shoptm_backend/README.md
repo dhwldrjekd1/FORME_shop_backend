@@ -540,6 +540,11 @@ src/main/java/com/forme/shop/
 - **해결**: `ReviewService.createReview`는 `CartService.addCart`와 동일하게 `existsById` → `existsByIdAndIsActiveTrue`로 교체. `QnaService.createQna`는 상품이 지정된 경우(`productId`가 있는 경우만 — 상품과 무관한 일반 문의는 그대로 둠) `findById` 직후 `isActive` 확인을 추가.
 - **교차검증에서 확인한 것**: (1) 이 변경이 "삭제되기 전에 이미 작성된" 리뷰/문의까지 숨기면 안 된다는 점을 확인 — `getProductReviews`/`getMyReviews`/`getAllQna`/`getMyQna`는 전부 `Review`/`Qna` 자신의 `isActive`만 보고 연결된 `Product.isActive`는 보지 않으므로, 상품이 삭제된 뒤에도 과거에 쓴 리뷰·문의는 그대로 조회됨(의도대로). (2) `QnaService`의 새 확인이 `if (dto.getProductId() != null)` 블록 안에만 있어 상품 없는 일반 문의 경로에는 영향이 없음을 확인. (3) 두 경우 모두 "존재하지 않는 상품입니다"로 같은 메시지를 던져, 진짜 없는 상품 id와 삭제된 상품 id를 메시지로 구분할 수 없게(열거 공격 방지) 기존 관례와 일치함을 확인.
 - **검증**: 임시 포트(8399)에서 테스트 상품으로 (1) 활성 상태에서 리뷰·QnA 작성 성공 확인 → (2) 관리자가 상품 삭제 → 같은 상품에 새 리뷰·QnA 시도 둘 다 400 거부 확인 → (3) 상품 없는 일반 문의는 그대로 성공 확인 → (4) 삭제 전에 썼던 리뷰·QnA를 다시 조회 → 여전히 정상 조회됨을 확인(의도대로 과거 글은 안 숨겨짐). 테스트 데이터 모두 삭제, 배포 후 실제 라이브 정상 동작 확인.
+
+### 상품 isActive 확인 코드가 여러 곳에서 중복돼 있었음 (정리, 2026.10.19)
+- **문제**: 지난 두 항목을 거치며 "상품이 존재하고 활성 상태여야 한다"는 같은 확인이 `CartService`/`WishlistService`/`ReviewService`(존재만 확인하는 `existsByIdAndIsActiveTrue`)와 `QnaService`/`OrderService`(엔티티가 필요해 `findById` 후 별도로 `isActive`를 다시 확인하는 2단계 방식)에 서로 다른 모양으로 흩어져 있었음. 기능 버그는 아니지만, 나중에 비슷한 코드를 또 추가할 사람이 참고할 "정석" 패턴이 하나로 안 모여있어 같은 실수(이번에 고친 버그들)가 반복될 수 있는 구조였음.
+- **해결**: `ProductRepository`에 `findByIdAndIsActiveTrue(id)`(엔티티가 필요한 호출부용)를 새로 추가. `QnaService.createQna`의 `findById` + 별도 `isActive` 체크 2단계를 이 단일 쿼리로 통합(두 분기 모두 메시지가 같아 동작 변화 없음). `ProductService.getProduct()`와 `OrderService.createOrder()`는 "존재하지 않음"과 "삭제됨"에 서로 다른 메시지를 내려줘야 해서(상품 상세 화면/주문 화면에서 사용자에게 다른 의미) 통합하지 않고 그대로 둠 — 이게 실수로 빠뜨린 게 아니라 의도적인 예외라는 걸 주석으로 명시해, 나중에 코드를 보는 사람이 "통일 안 된 버그"로 오해하지 않도록 함.
+- **검증**: 임시 포트(8399)에서 (1) 존재하지 않는 상품 id로 QnA 등록 시도 → 기존과 동일한 메시지로 거부 확인. (2) 활성 상품으로 QnA 등록 → 정상 성공. (3) 그 상품을 관리자가 삭제한 뒤 같은 상품으로 다시 QnA 등록 시도 → 거부 확인. (4) 상품 상세 조회(`getProduct`)에서 존재하지 않는 상품과 삭제된 상품이 여전히 서로 다른 메시지("존재하지 않는 상품입니다." vs "삭제된 상품입니다.")로 구분되는 것을 확인(통합 대상에서 의도적으로 뺀 부분이 정상 동작함을 재확인). 테스트 데이터 모두 삭제, 배포 후 실제 라이브 정상 동작 확인.
 ---
 
 ## 빌드 및 배포
