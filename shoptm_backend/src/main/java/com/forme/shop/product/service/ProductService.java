@@ -83,6 +83,11 @@ public class ProductService {
 
     // 상품 단건 조회 (일반회원)
     // is_active = false 인 상품은 예외 발생
+    // ProductRepository.findByIdAndIsActiveTrue로 한 번에 합치지 않는 이유: 그 메서드는
+    // "존재하지 않음"과 "존재하지만 삭제됨"을 구분 안 하고 둘 다 빈 Optional로 뭉뚱그리는데,
+    // 여기는 그 둘을 서로 다른 메시지로 안내해야 해서(상품 상세 화면에서 "그런 상품 자체가
+    // 없다"와 "있었는데 지워졌다"는 사용자에게 다른 의미) 두 단계로 남겨둔다 — OrderService.
+    // createOrder가 같은 이유로 따로 처리하는 것과 동일한 패턴.
     public ProductResponseDto getProduct(Long id) {
         Product product = productRepository.findById(id)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 상품입니다."));

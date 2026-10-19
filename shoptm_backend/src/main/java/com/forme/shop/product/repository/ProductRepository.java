@@ -7,6 +7,7 @@ import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import java.util.List;
+import java.util.Optional;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
 
@@ -38,11 +39,19 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
             "WHERE p.id = :productId")
     int increaseStock(@Param("productId") Long productId, @Param("quantity") Integer quantity);
 
-    // 장바구니/찜 담기 전용 존재 확인 — 단순 existsById만 쓰면 이미 소프트 삭제(isActive=false)
-    // 된 상품도 productId만 알면 그대로 담을 수 있었다(ProductService.getProduct()는 이미
-    // isActive를 확인해 상품 상세 페이지에서는 막혀 있는데, 장바구니/찜 담기 경로만 빠져있던
-    // 것 — 교차검증에서 발견).
+    // 장바구니/찜/리뷰 작성 전용 존재 확인 — 단순 existsById만 쓰면 이미 소프트 삭제
+    // (isActive=false)된 상품도 productId만 알면 그대로 담을 수 있었다(ProductService.
+    // getProduct()는 이미 isActive를 확인해 상품 상세 페이지에서는 막혀 있는데, 장바구니/찜/
+    // 리뷰 작성 경로만 빠져있던 것 — 교차검증에서 발견). 상품 엔티티 자체가 필요 없는
+    // 호출부(CartService.addCart, WishlistService.addWishlist, ReviewService.createReview)에서
+    // 쓴다 — 엔티티가 필요하면 바로 아래 findByIdAndIsActiveTrue를 쓴다.
     boolean existsByIdAndIsActiveTrue(Long id);
+
+    // 위와 같은 이유지만, 상품 엔티티 자체가 필요한 호출부(QnaService.createQna)에서 쓴다.
+    // OrderService.createOrder는 "상품명을 포함한 더 구체적인 안내(예: '{상품명}은(는) 더
+    // 이상 판매하지 않는 상품입니다')"가 필요해 이 메서드를 쓰지 않고 findById 후 별도로
+    // isActive를 확인한다 — 의도적으로 다른 패턴이니 이 메서드로 통합하지 않는다.
+    Optional<Product> findByIdAndIsActiveTrue(Long id);
 
     // SELECT * FROM products WHERE is_active = true
     // 삭제되지 않은 전체 상품 목록 조회
