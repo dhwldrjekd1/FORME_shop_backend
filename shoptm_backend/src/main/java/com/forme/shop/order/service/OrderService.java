@@ -18,6 +18,10 @@ import com.forme.shop.product.repository.ProductSizeRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -501,13 +505,23 @@ public class OrderService {
         }
     }
 
-    // 관리자 - 전체 주문 목록 조회
-    public List<OrderResponseDto> getAllOrders() {
+    // 관리자 - 전체 주문 목록 조회. 회원목록과 같은 이유로 페이지네이션 적용(교차검증에서
+    // 발견 — 관리자 화면 전체에 공통된 문제). orderItems를 JOIN FETCH하는 쿼리에 Pageable을
+    // 바로 못 붙이는 이유는 OrderRepository.findAllIdsOrderByCreatedAtDesc 주석 참고 —
+    // id만 먼저 페이지네이션하고 그 id들로 상세를 다시 조회하는 2단계 방식을 쓴다.
+    public Page<OrderResponseDto> getAllOrders(Pageable pageable) {
         SecurityUtil.requireAdmin();
-        return orderRepository.findAllWithDetailsOrderByCreatedAtDesc()
-                .stream()
-                .map(OrderResponseDto::from)
-                .collect(Collectors.toList());
+        // 정렬 기준은 createdAt DESC로 고정이라(findAllIdsOrderByCreatedAtDesc 참고),
+        // 호출부가 다른 sort를 넘겨도 그대로 무시한다 — 그 sort를 pageable에 남겨서 그대로
+        // PageImpl에 넘기면, 응답 메타데이터(pageable.sort)는 요청받은 sort라고 거짓으로
+        // 알리는데 content는 실제로 createdAt DESC로만 오는 불일치가 생긴다(교차검증에서 발견).
+        Pageable pageOnly = PageRequest.of(pageable.getPageNumber(), pageable.getPageSize());
+        Page<Long> idPage = orderRepository.findAllIdsOrderByCreatedAtDesc(pageOnly);
+        List<Orders> orders = orderRepository.findAllWithDetailsByIdIn(idPage.getContent());
+        // IN절 결과는 id 목록 순서를 보장하지 않으므로, idPage가 이미 정한 순서(createdAt DESC)로 다시 정렬.
+        orders.sort((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()));
+        List<OrderResponseDto> dtos = orders.stream().map(OrderResponseDto::from).collect(Collectors.toList());
+        return new PageImpl<>(dtos, pageOnly, idPage.getTotalElements());
     }
 
     private static final java.util.Set<String> VALID_ORDER_STATUSES = java.util.Set.of(

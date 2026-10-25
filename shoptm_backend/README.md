@@ -547,6 +547,12 @@ src/main/java/com/forme/shop/
 - **검증**: 임시 포트(8399)에서 (1) 존재하지 않는 상품 id로 QnA 등록 시도 → 기존과 동일한 메시지로 거부 확인. (2) 활성 상품으로 QnA 등록 → 정상 성공. (3) 그 상품을 관리자가 삭제한 뒤 같은 상품으로 다시 QnA 등록 시도 → 거부 확인. (4) 상품 상세 조회(`getProduct`)에서 존재하지 않는 상품과 삭제된 상품이 여전히 서로 다른 메시지("존재하지 않는 상품입니다." vs "삭제된 상품입니다.")로 구분되는 것을 확인(통합 대상에서 의도적으로 뺀 부분이 정상 동작함을 재확인). 테스트 데이터 모두 삭제, 배포 후 실제 라이브 정상 동작 확인.
 ---
 
+### 관리자 화면(회원목록/주문목록)에 페이지네이션이 없었음 (2026.10.25)
+- **문제**: `MemberService.getAllMembers()`/`AdminService.searchMembers()`/`OrderService.getAllOrders()`가 전부 `findAll()`/`findAllWithDetailsOrderByCreatedAtDesc()`로 테이블 전체를 한 번에 응답에 담아 돌려주고 있었음. 지금은 회원·주문이 적어 문제가 안 보이지만, 늘어날수록 응답 지연·브라우저 메모리 증가로 그대로 이어지는 구조.
+- **해결**: 회원목록/회원검색/주문목록 세 API 모두 Spring Data `Pageable`/`Page<T>`로 전환(`GET .../admin/members`, `.../admin/members/search`, `.../admin/orders` 모두 `?page=&size=` 파라미터 추가, 기본 size=20). 주문목록은 `orderItems`를 `LEFT JOIN FETCH`하는 쿼리라 Pageable을 그대로 붙이면 Hibernate가 DB `LIMIT/OFFSET`을 못 쓰고 전체 결과를 메모리에 올린 뒤 잘라내는 문제(fetch join + pagination의 알려진 한계)가 있어, id만 먼저 페이지네이션(`findAllIdsOrderByCreatedAtDesc`)하고 그 id들로만 상세를 다시 fetch join(`findAllWithDetailsByIdIn`)하는 2단계 방식으로 구현. 프론트(`AdminMembers.vue`/`AdminOrders.vue`)는 바뀐 `Page` 응답(`content`/`totalElements`/`totalPages`) 구조에 맞춰 수정하고, 공용 페이지네이션 UI(`AdminPagination.vue`)를 추가.
+- **교차검증에서 확인한 것**: `getAllOrders()`가 id 페이지네이션은 `Pageable`의 sort를 따르면서도 상세 조회 후엔 항상 createdAt DESC로만 재정렬해, 응답 메타데이터(`pageable.sort`)가 요청받은 정렬이라고 알리는 것과 실제 `content` 정렬이 어긋날 수 있는 불일치가 지적됨 — 정렬은 처음부터 createdAt DESC로 고정이라는 걸 명확히 하기로 하고, 컨트롤러가 sort 파라미터를 받지 않도록 하고 서비스에서도 클라이언트가 넘긴 sort를 무시한 채 page/size만 쓰도록 수정(`PageRequest.of(page, size)`로 재구성). `MemberService`에 리팩터링 후 안 쓰게 된 `List`/`Collectors` import가 남아있던 것도 함께 정리.
+- **검증**: 운영 DB에 연결한 상태로(읽기 전용) Spring Data JPA 리포지토리 테스트 작성 후 실행 — (1) 회원/주문 각각 `count()`와 `Page.getTotalElements()`가 일치, (2) 페이지 내 정렬 순서(id DESC / createdAt DESC)가 올바름, (3) 주문의 2단계 조회(id 페이지네이션 → IN절 상세조회)가 `member`/`orderItems`/`product`를 지연로딩 예외 없이 전부 채워줌을 확인, (4) 운영 DB엔 현재 회원·주문이 3건뿐이라 여러 페이지에 걸친 경계 동작은 확인할 수 없어서, `@Transactional`로 끝나면 자동 롤백되는 테스트 안에서만 임시로 회원 12명을 추가해 여러 페이지에 걸쳐 중복/누락 없이 조회되는 것을 확인(테스트 종료 후 `count()`가 원래 값(3)으로 롤백됐음을 직접 psql로 재확인). 사용한 테스트 코드는 검증 전용이라 커밋하지 않고 삭제함. 프론트는 `npm run build` 성공 확인. 배포 후 관리자 API가 여전히 인증 없이는 401로 막혀있음과 신규 프로세스 기동 로그에 에러가 없음을 확인.
+
 ## 빌드 및 배포
 
 ```bash

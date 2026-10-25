@@ -5,6 +5,9 @@ import com.forme.shop.order.dto.OrderResponseDto;
 import com.forme.shop.order.service.OrderService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -50,11 +53,14 @@ public class OrderController {
         return ResponseEntity.noContent().build();
     }
 
-    // 관리자 - 전체 주문 목록
-    // GET /api/admin/orders
+    // 관리자 - 전체 주문 목록. 회원목록과 같은 이유로 페이지네이션 적용(교차검증에서 발견).
+    // 정렬은 createdAt DESC로 고정(OrderService.getAllOrders 참고 — fetch join과 Pageable의
+    // sort를 함께 쓸 수 없는 구조적 한계) 이라 sort 파라미터는 받지 않는다.
+    // GET /api/admin/orders?page=0&size=20
     @GetMapping("/admin/orders")
-    public ResponseEntity<List<OrderResponseDto>> getAllOrders() {
-        return ResponseEntity.ok(orderService.getAllOrders());
+    public ResponseEntity<Page<OrderResponseDto>> getAllOrders(
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(orderService.getAllOrders(pageable));
     }
 
     // 관리자 - 주문 상태 변경 (배송처리 등)

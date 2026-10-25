@@ -1,6 +1,8 @@
 package com.forme.shop.member.repository;
 
 import com.forme.shop.member.entity.Member;  // 반드시 우리 Member 클래스 import
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
@@ -38,9 +40,12 @@ public interface MemberRepository extends JpaRepository<Member, Long> {
     // 그 이스케이프를 해석한다 — 그냥 Spring Data의 Containing 파생 쿼리를 쓰면 keyword 안의
     // '%'/'_'가 원래 문자가 아니라 LIKE 와일드카드로 해석돼(예: 이름에 '_'가 그대로 들어간
     // "a_b"를 검색했는데 "a1b"/"axb" 같은 무관한 회원까지 걸리는 등) 검색 결과가 부정확해진다.
+    // 회원 수가 늘어나면 검색 결과 자체도 페이지네이션해야 해서(교차검증에서 발견 — 관리자
+    // 화면 전체가 findAll()/전체 검색결과를 한 번에 반환하던 문제), Pageable을 받는 버전을
+    // 추가. Spring Data가 같은 JPQL에서 COUNT 쿼리를 자동으로 만들어준다.
     @Query("SELECT m FROM Member m WHERE m.name LIKE CONCAT('%', :keyword, '%') ESCAPE '\\' " +
            "OR m.email LIKE CONCAT('%', :keyword, '%') ESCAPE '\\'")
-    List<Member> searchByNameOrEmail(@Param("keyword") String escapedKeyword);
+    Page<Member> searchByNameOrEmail(@Param("keyword") String escapedKeyword, Pageable pageable);
 
     // grade 한 컬럼만 원자적으로 바꾼다 (OrderService.updateMemberGrade 전용).
     // 거기서 로드해 들고 있는 member는 그 사이 decreaseStockIfAvailable()의

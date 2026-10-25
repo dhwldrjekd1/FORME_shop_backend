@@ -9,15 +9,15 @@ import com.forme.shop.member.entity.Member;  // 반드시 우리 Member 클래�
 import com.forme.shop.member.repository.MemberRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service                          // 스프링 빈으로 등록, 비즈니스 로직 담당
 @RequiredArgsConstructor          // Lombok: final 필드를 생성자 주입으로 자동 처리
@@ -212,13 +212,14 @@ public class MemberService {
         tokenBlacklistService.revoke(jti, expiresAt);
     }
 
-    // 관리자 - 전체 회원 목록 조회
-    public List<MemberResponseDto> getAllMembers() {
+    // 관리자 - 전체 회원 목록 조회. 예전엔 findAll()로 전체 테이블을 한 번에 응답으로
+    // 돌려줘서, 회원 수가 늘어날수록 응답 지연·브라우저 메모리 증가로 이어지는 구조였다
+    // (교차검증에서 발견 — 관리자 화면 전체에 공통된 문제, 다른 목록 화면도 같은 방식으로
+    // 순차 개선 중). Pageable을 받아 JpaRepository가 기본 제공하는 findAll(Pageable)로
+    // DB 쪽에서 페이지 단위로만 가져온다.
+    public Page<MemberResponseDto> getAllMembers(Pageable pageable) {
         SecurityUtil.requireAdmin();
-        return memberRepository.findAll()
-                .stream()
-                .map(MemberResponseDto::from)   // 각 Member 엔티티를 DTO로 변환
-                .collect(Collectors.toList());
+        return memberRepository.findAll(pageable).map(MemberResponseDto::from);
     }
 
     // 관리자 - 회원 강퇴 (소프트 삭제, 탈퇴와 동일한 처리)

@@ -10,6 +10,8 @@ import com.forme.shop.order.repository.OrderRepository;
 import com.forme.shop.product.entity.Product;
 import com.forme.shop.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -204,8 +206,8 @@ public class AdminService {
     // 이름 또는 이메일에 키워드가 포함된 회원 검색 — 필터링을 DB 쿼리로 위임
     // (MemberRepository.searchByNameOrEmail 참고). LikeEscapeUtil 참고 (와일드카드 문자를
     // 그대로 넘기면 검색이 부정확해지는 문제를 막기 위한 이스케이프).
-    public List<Member> searchMembers(String keyword) {
+    public Page<Member> searchMembers(String keyword, Pageable pageable) {
         SecurityUtil.requireAdmin();
-        return memberRepository.searchByNameOrEmail(LikeEscapeUtil.escape(keyword));
+        return memberRepository.searchByNameOrEmail(LikeEscapeUtil.escape(keyword), pageable);
     }
 }

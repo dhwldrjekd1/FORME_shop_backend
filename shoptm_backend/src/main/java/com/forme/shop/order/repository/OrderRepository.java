@@ -1,6 +1,8 @@
 package com.forme.shop.order.repository;
 
 import com.forme.shop.order.entity.Orders;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -72,6 +74,24 @@ public interface OrderRepository extends JpaRepository<Orders, Long> {
             "LEFT JOIN FETCH oi.product " +
             "ORDER BY o.createdAt DESC")
     List<Orders> findAllWithDetailsOrderByCreatedAtDesc();
+
+    // 관리자 - 전체 주문 목록 페이지네이션 전용. 위 findAllWithDetailsOrderByCreatedAtDesc()처럼
+    // 컬렉션(orderItems)을 JOIN FETCH한 쿼리에 그대로 Pageable을 붙이면, Hibernate가 DB
+    // LIMIT/OFFSET을 못 쓰고 전체 결과를 메모리에 올린 뒤 애플리케이션 레벨에서 잘라내
+    // 버린다(fetch join + pagination의 알려진 한계) — 페이지네이션의 목적 자체가 무력화됨.
+    // 그래서 2단계로 나눈다: 1) id만 DB 페이지네이션으로 가져오고, 2) 그 id들만 IN절로
+    // fetch join해서 상세를 채운다. 전체 건수(count)도 이 1단계 쿼리에서 나온다.
+    @Query("SELECT o.id FROM Orders o ORDER BY o.createdAt DESC")
+    Page<Long> findAllIdsOrderByCreatedAtDesc(Pageable pageable);
+
+    // 위 findAllIdsOrderByCreatedAtDesc가 골라준 id들만 상세 조회(DISTINCT + IN절이라 결과
+    // 순서가 id 목록 순서와 같다는 보장이 없음 — 호출부에서 createdAt 기준으로 다시 정렬해야 함).
+    @Query("SELECT DISTINCT o FROM Orders o " +
+            "LEFT JOIN FETCH o.member " +
+            "LEFT JOIN FETCH o.orderItems oi " +
+            "LEFT JOIN FETCH oi.product " +
+            "WHERE o.id IN :ids")
+    List<Orders> findAllWithDetailsByIdIn(@Param("ids") List<Long> ids);
 
     // OrderService.getMyOrders()(내 주문 목록) 전용 — 위와 같은 이유로 member/orderItems/
     // orderItems.product를 한 번에 JOIN FETCH한다. member는 항상 호출한 그 회원 한 명뿐이라
