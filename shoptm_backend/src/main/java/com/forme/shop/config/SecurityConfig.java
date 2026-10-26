@@ -93,7 +93,10 @@ public class SecurityConfig {
 
                 // JWT 필터를 UsernamePasswordAuthenticationFilter 앞에 등록
                 // 모든 요청에서 JWT 토큰을 먼저 검증
-                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class);
+                .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
+                // ApiNoStoreFilter도 같은 지점(ExceptionTranslationFilter보다 앞)에 등록 — 인증
+                // 실패(401)로 체인이 여기서 바로 끝나도 Cache-Control 헤더는 이미 설정돼 있어야 함
+                .addFilterBefore(new ApiNoStoreFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }
