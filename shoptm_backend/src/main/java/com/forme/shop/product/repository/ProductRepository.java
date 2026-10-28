@@ -53,26 +53,30 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     // isActive를 확인한다 — 의도적으로 다른 패턴이니 이 메서드로 통합하지 않는다.
     Optional<Product> findByIdAndIsActiveTrue(Long id);
 
-    // SELECT * FROM products WHERE is_active = true
-    // 삭제되지 않은 전체 상품 목록 조회
+    // SELECT * FROM products WHERE is_active = true ORDER BY id DESC
+    // 삭제되지 않은 전체 상품 목록 조회. ORDER BY가 없으면 DB가 반환 순서를 보장하지 않아
+    // 새로고침마다(또는 쿼리 실행계획이 바뀔 때마다) 상품 순서가 흔들릴 수 있었음(교차검증에서
+    // 발견) — 최신 등록순(id DESC)으로 고정. 프론트(productStore.js의 filteredProducts)가
+    // 같은 기준으로 다시 정렬해 보강하고 있었지만, API 응답 자체가 정렬돼 있어야 그 프론트
+    // 로직이 누락된 다른 화면에서도 순서가 흔들리지 않는다.
     // category/sizes 는 LAZY 라서 DTO 변환 시 상품마다 추가 쿼리가 나가는 N+1이 발생함
     // → EntityGraph 로 한 쿼리에서 함께 조회
     @EntityGraph(attributePaths = {"category", "sizes"})
-    List<Product> findByIsActiveTrue();
+    List<Product> findByIsActiveTrueOrderByIdDesc();
 
-    // SELECT * FROM products WHERE category_id = ? AND is_active = true
-    // 카테고리별 상품 목록 조회
+    // SELECT * FROM products WHERE category_id = ? AND is_active = true ORDER BY id DESC
+    // 카테고리별 상품 목록 조회 — 위와 같은 이유로 정렬 고정.
     @EntityGraph(attributePaths = {"category", "sizes"})
-    List<Product> findByCategoryIdAndIsActiveTrue(Long categoryId);
+    List<Product> findByCategoryIdAndIsActiveTrueOrderByIdDesc(Long categoryId);
 
     // 상품명으로 검색 — MemberRepository.searchByNameOrEmail과 동일한 이유로 이스케이프한
     // 커스텀 쿼리를 쓴다. 예전엔 Spring Data의 Containing 파생 쿼리를 그대로 썼는데, keyword
     // 안의 '%'/'_'가 원래 문자가 아니라 LIKE 와일드카드로 해석돼(예: 상품명에 '_'가 그대로
     // 들어간 "a_b"를 검색했는데 "axb" 같은 무관한 상품까지 걸림) 검색 결과가 부정확해졌음
-    // (ProductService.searchProducts가 이스케이프해서 넘김).
+    // (ProductService.searchProducts가 이스케이프해서 넘김). 위와 같은 이유로 ORDER BY 고정.
     @EntityGraph(attributePaths = {"category", "sizes"})
     @Query("SELECT p FROM Product p WHERE p.name LIKE CONCAT('%', :keyword, '%') ESCAPE '\\' " +
-           "AND p.isActive = true")
+           "AND p.isActive = true ORDER BY p.id DESC")
     List<Product> searchByName(@Param("keyword") String escapedKeyword);
 
     // SELECT * FROM products WHERE is_new = true AND is_active = true ORDER BY created_at DESC LIMIT 4

@@ -75,7 +75,7 @@ public class ProductService {
     // 전체 상품 목록 조회 (일반회원)
     // is_active = true 인 상품만 반환 (삭제된 상품 제외)
     public List<ProductResponseDto> getAllProducts() {
-        return productRepository.findByIsActiveTrue()
+        return productRepository.findByIsActiveTrueOrderByIdDesc()
                 .stream()
                 .map(ProductResponseDto::from)
                 .collect(Collectors.toList());
@@ -102,7 +102,7 @@ public class ProductService {
     // 카테고리별 상품 조회
     // category_id 로 필터링, 삭제된 상품 제외
     public List<ProductResponseDto> getProductsByCategory(Long categoryId) {
-        return productRepository.findByCategoryIdAndIsActiveTrue(categoryId)
+        return productRepository.findByCategoryIdAndIsActiveTrueOrderByIdDesc(categoryId)
                 .stream()
                 .map(ProductResponseDto::from)
                 .collect(Collectors.toList());

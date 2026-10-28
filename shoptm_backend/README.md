@@ -559,6 +559,12 @@ src/main/java/com/forme/shop/
 - **해결**: 서블릿 `Filter`(`ApiNoStoreFilter`)를 새로 만들어 `/api/**` 요청에 `Cache-Control: no-store`를 명시적으로 붙이고, `SecurityConfig`의 보안 필터체인 안(`UsernamePasswordAuthenticationFilter` 앞)에 등록. `HandlerInterceptor`로는 안 된다는 걸 교차검증에서 바로 확인했는데(아래 참고), 처음엔 `WebConfig`에 `HandlerInterceptor`로 구현했었음.
 - **교차검증에서 확인한 것**: (1) 1차 구현(`HandlerInterceptor`, `WebConfig.addInterceptors`)은 인증 실패(401)·권한 없음(403)으로 Spring Security 필터체인이 `DispatcherServlet`까지 가지도 못하고 바로 응답을 끝내버리는 경우엔 `HandlerInterceptor` 자체가 전혀 실행되지 않아서, 이 수정이 막으려던 그 경로(민감한 `/api/**` 요청이 인증 없이 들어오는 경우)에 정작 적용이 안 되는 핵심 결함이 지적됨 — 서블릿 `Filter`로 다시 구현해 해결. (2) `ApiNoStoreFilter`를 `@Component`로도 등록하면서 동시에 `SecurityConfig.addFilterBefore`로도 등록하면 두 번 실행될 수 있다는 점(의존성 주입이 필요한 `JwtFilter`는 이미 이런 구조라 그대로 두되, 의존성이 없는 이 필터는 굳이 그 구조를 따를 이유가 없어 `@Component` 없이 `SecurityConfig`에서 `new`로 직접 생성) 확인. (3) `JwtFilter`가 토큰 검증 실패 시에도 체인을 계속 진행시키고(중간에 끊지 않음) 실제 401은 더 뒤쪽 `ExceptionTranslationFilter`가 처리하는 구조라, 두 필터의 상대 순서는 문제가 되지 않음을 확인.
 - **검증**: 임시 포트(8399)에서 네 가지 응답을 직접 비교 — (1) 인증 없이 `/api/admin/members` 호출 → `401` 응답에 `Cache-Control: no-store` 포함(수정 전이었다면 헤더 자체가 없었을 상황). (2) 로그인 불필요한 `/api/products`(200) → 역시 `no-store`. (3) 해시 파일명 정적 자산(`/assets/*.js`) → `max-age=31536000, public, immutable` 그대로 유지(안 깨짐). (4) SPA 진입점(`/`) → `no-cache` 그대로 유지. 배포 후 운영 환경(`https://forme.dyy.kr`)에서도 같은 네 가지를 동일하게 재확인, 신규 프로세스 기동 로그에 에러 없음 확인.
+---
+
+### 상품 목록/검색 조회에 ORDER BY가 없었음 (2026.10.28)
+- **문제**: `ProductRepository.findByIsActiveTrue()`/`findByCategoryIdAndIsActiveTrue()`/`searchByName()` 셋 다 `ORDER BY`가 없어서, DB가 반환하는 순서가 보장되지 않았음 — 실행계획이 바뀌거나 재배포로 커넥션이 새로 맺어지는 시점마다 `/api/products` 응답 순서가 흔들릴 수 있는 구조. 프론트(`productStore.js`의 `filteredProducts`)가 최신순(id DESC)으로 다시 정렬해 어느 정도 가려주고 있었지만, 그건 응답이 이미 뒤섞인 뒤에 프론트가 매번 재정렬해야 하는 구조적 미봉책이었고, `ProductsView.vue`는 그 재정렬조차 안 쓰고 있었음(프론트 저장소 트러블슈팅 참고).
+- **해결**: 세 리포지토리 메서드 모두 `OrderByIdDesc`로 정렬을 명시(`findByIsActiveTrueOrderByIdDesc`/`findByCategoryIdAndIsActiveTrueOrderByIdDesc`), `searchByName`의 JPQL에도 `ORDER BY p.id DESC` 추가. 호출부(`ProductService`, `AdminService`) 전부 이름 변경에 맞춰 갱신.
+- **검증**: 임시 포트(8399)에서 운영 DB 기준으로 `/api/products`(전체 30건)를 연속 두 번 호출해 두 응답의 id 순서가 완전히 동일(`id DESC`)함을 확인. `/api/products/search?keyword=티셔츠`(13건 매치)도 동일하게 `id DESC` 확인. 배포 후 운영 환경(`https://forme.dyy.kr/api/products`)에서도 같은 정렬 확인.
 
 ## 빌드 및 배포
 

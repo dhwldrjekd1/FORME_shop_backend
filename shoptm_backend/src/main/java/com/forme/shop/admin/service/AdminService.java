@@ -66,7 +66,7 @@ public class AdminService {
         long totalProducts   = productRepository.count();  // 전체 상품 수
 
         // isActive = true 인 상품 목록 - 판매중 상품 수/품절 상품 수 계산에 공용으로 사용 (중복 조회 방지)
-        List<Product> activeProducts = productRepository.findByIsActiveTrue();
+        List<Product> activeProducts = productRepository.findByIsActiveTrueOrderByIdDesc();
         long onSaleProducts  = activeProducts.size();
 
         // isActive = true 이면서 stock = 0 인 상품 = 품절 상품
