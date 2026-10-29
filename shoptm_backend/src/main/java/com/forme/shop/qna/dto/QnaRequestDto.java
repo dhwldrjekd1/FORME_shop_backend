@@ -2,6 +2,7 @@ package com.forme.shop.qna.dto;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Pattern;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -14,7 +15,11 @@ public class QnaRequestDto {
 
         private Long productId;        // 질문 대상 상품 ID (선택)
 
+        // Qna.title 컬럼 길이(200)와 맞춤 — 없으면 DB가 거부하는
+        // DataIntegrityViolationException이 그대로 500으로 노출됨(교차검증에서 발견).
+        // content/answer는 TEXT 컬럼이라 DB 쪽 길이 제한이 없어 여기서는 다루지 않음.
         @NotBlank(message = "제목을 입력해주세요.")
+        @Size(max = 200, message = "제목은 200자 이하여야 합니다.")
         private String title;          // 질문 제목
 
         @NotBlank(message = "내용을 입력해주세요.")
@@ -27,7 +32,12 @@ public class QnaRequestDto {
     // 수정할 항목만 보내면 되므로 선택 입력
     @Getter @Setter
     public static class Update {
-        @Pattern(regexp = "(?sU).*\\S.*", message = "제목을 입력해주세요.")
+        // BoardRequestDto.Update.title과 동일한 이유로 "비어있지 않음"과 "길이 제한"을
+        // 하나의 정규식으로 합침(교차검증에서 발견 — @Pattern과 @Size를 따로 두면 둘 다
+        // 동시에 실패하는 입력에서 GlobalExceptionHandler가 한쪽 메시지를 덮어씀). "$" 대신
+        // "\z"를 쓰는 이유도 BoardRequestDto.Update.title 참고(끝에 줄바꿈이 있으면 "$"로는
+        // 길이 제한이 우회됨).
+        @Pattern(regexp = "(?sU)(?=^.{0,200}\\z).*\\S.*", message = "제목을 1~200자로 입력해주세요.")
         private String title;          // 수정할 제목 (선택)
 
         @Pattern(regexp = "(?sU).*\\S.*", message = "내용을 입력해주세요.")

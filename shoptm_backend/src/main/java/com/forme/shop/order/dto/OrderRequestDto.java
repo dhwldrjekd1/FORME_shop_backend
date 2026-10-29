@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
@@ -23,13 +24,21 @@ public class OrderRequestDto {
         @Valid
         private List<OrderItemDto> items;  // 주문할 상품 목록
 
+        // Orders.receiverName 컬럼 길이(50)와 맞춤 — 없으면 DB가 거부하는 DataIntegrityViolationException이
+        // 그대로 500으로 노출됨(교차검증에서 발견 — 이런 종류의 길이 제한 누락이 이 DTO
+        // 전체에 공통된 문제). @Size는 값이 null이면 통과시키므로 @NotBlank와 함께 둬야 함.
         @NotBlank(message = "수령인 이름을 입력해주세요.")
+        @Size(max = 50, message = "수령인 이름은 50자 이하여야 합니다.")
         private String receiverName;       // 수령인 이름
 
+        // Orders.receiverPhone 컬럼 길이(20)와 맞춤
         @NotBlank(message = "수령인 전화번호를 입력해주세요.")
+        @Size(max = 20, message = "수령인 전화번호는 20자 이하여야 합니다.")
         private String receiverPhone;      // 수령인 전화번호
 
+        // Orders.address 컬럼은 길이 지정이 없어 Hibernate 기본값(255)을 따름
         @NotBlank(message = "배송 주소를 입력해주세요.")
+        @Size(max = 255, message = "배송 주소는 255자 이하여야 합니다.")
         private String address;            // 배송 주소
 
         // 참고용 — 실제 PAID 판정에는 쓰이지 않는다. paymentKey로 서버가 확인한 결제가 있을
@@ -55,6 +64,8 @@ public class OrderRequestDto {
         @Max(value = 999, message = "수량은 999개 이하여야 합니다.")
         private Integer quantity;          // 주문 수량
 
+        // OrderItem.size 컬럼 길이(20)와 맞춤
+        @Size(max = 20, message = "사이즈는 20자 이하여야 합니다.")
         private String size;               // 주문 사이즈
     }
 
