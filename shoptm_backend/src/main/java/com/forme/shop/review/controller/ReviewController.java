@@ -5,6 +5,9 @@ import com.forme.shop.review.dto.ReviewResponseDto;
 import com.forme.shop.review.service.ReviewService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -60,11 +63,12 @@ public class ReviewController {
         return ResponseEntity.noContent().build();
     }
 
-    // 관리자 - 전체 리뷰 목록
-    // GET /api/admin/reviews
+    // 관리자 - 전체 리뷰 목록. 회원목록/주문목록과 같은 이유로 페이지네이션 적용.
+    // GET /api/admin/reviews?page=0&size=20
     @GetMapping("/admin/reviews")
-    public ResponseEntity<List<ReviewResponseDto>> getAllReviews() {
-        return ResponseEntity.ok(reviewService.getAllReviews());
+    public ResponseEntity<Page<ReviewResponseDto>> getAllReviews(
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(reviewService.getAllReviews(pageable));
     }
 
     // 관리자 - 리뷰 답글

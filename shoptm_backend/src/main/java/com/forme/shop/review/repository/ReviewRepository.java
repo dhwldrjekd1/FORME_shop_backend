@@ -1,6 +1,8 @@
 package com.forme.shop.review.repository;
 
 import com.forme.shop.review.entity.Review;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
@@ -23,9 +25,14 @@ public interface ReviewRepository extends JpaRepository<Review, Long> {
     @EntityGraph(attributePaths = {"member", "product"})
     List<Review> findByMemberIdAndIsActiveTrueOrderByCreatedAtDesc(Long memberId);
 
-    // 관리자 - 전체 리뷰 목록 조회 (findAll()은 EntityGraph를 붙일 수 없어 별도 메서드로 분리)
+    // 관리자 - 전체 리뷰 목록 조회 (findAll()은 EntityGraph를 붙일 수 없어 별도 메서드로 분리).
+    // member/product는 *-to-many가 아니라 *-to-one(ManyToOne) 관계라 EntityGraph로 함께
+    // 가져와도 행이 중복되지 않으므로, OrderRepository의 주문목록처럼 fetch join + 페이지네이션이
+    // 충돌하는 문제 없이 Pageable을 그대로 붙일 수 있다(교차검증에서 다른 라운드의 그 문제와
+    // 비교해 이 경우엔 해당하지 않음을 확인). 페이지네이션 적용(회원/주문 목록과 같은 이유 —
+    // 관리자 화면 전체가 findAll()류로 전체 테이블을 한 번에 반환하던 문제).
     @EntityGraph(attributePaths = {"member", "product"})
-    List<Review> findAllByOrderByCreatedAtDesc();
+    Page<Review> findAllByOrderByCreatedAtDesc(Pageable pageable);
 
     // createReview()가 원자적 삽입 직후 응답 조립에 쓰는 단건 조회라 위와 같은 이유로 EntityGraph 필요
     @EntityGraph(attributePaths = {"member", "product"})

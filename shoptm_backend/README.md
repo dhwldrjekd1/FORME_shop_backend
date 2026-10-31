@@ -572,6 +572,14 @@ src/main/java/com/forme/shop/
 - **해결**: 각 필드에 해당 엔티티 컬럼 길이와 맞춘 `@Size`를 추가. `address`는 엔티티에 길이 지정이 없어 Hibernate 기본값(255)으로 맞춤.
 - **교차검증에서 확인한 것**: (1) `BoardRequestDto.Update`/`QnaRequestDto.Update`의 `title`은 기존에 "비어있지 않음"을 `@Pattern`으로 확인하고 있었는데, 거기에 `@Size`를 그냥 나란히 추가하면 공백만 201자처럼 둘 다 동시에 실패하는 입력에서 `GlobalExceptionHandler`가 필드별 에러를 `HashMap`에 담다가 한쪽 메시지를 덮어써버린다는 지적을 받음 — 두 조건("비어있지 않음"+"길이 제한")을 하나의 정규식(`(?=^.{0,200}\z).*\S.*`)으로 합쳐 이 필드에 실패 가능한 제약을 하나만 두도록 수정. (2) 그 정규식 초안에서 길이를 `$`로 재던 걸 실제 Java 테스트로 재현해 지적받음 — Java 정규식에서 `$`(MULTILINE 없이)는 입력 끝의 줄바꿈 문자 바로 앞에도 매칭돼서, "200자 + 줄바꿈 1개"(합쳐서 201자)가 길이 제한을 통과해버리는 구멍이 있었음. 입력의 절대 끝만 보는 `\z`로 교체해 막음(직접 Java로 `Pattern.matches` 재현해서 고친 뒤에도 재확인). (3) `Create` DTO들의 `@NotBlank`+`@Size` 조합은 null이면 `@NotBlank`만, 길이초과면 `@Size`만 걸려 동시에 둘 다 실패할 수 없는 구조라 그대로 둬도 안전함을 확인.
 - **검증**: 임시 포트(8399)에서 테스트 회원을 만들어 직접 확인 — (1) 주문 생성 시 `receiverName` 51자/`address` 256자/품목 `size` 21자 각각 보내면 전부 정확히 400 + 필드별 메시지(수정 전이었다면 500이었을 상황). (2) 게시글 작성 시 제목 201자 → 400, 200자 → 성공. (3) 게시글 수정(`PUT`)에서 공백 201자 → 400(“제목을 1~200자로 입력해주세요”, 메시지 안 깨짐), "a"×200+줄바꿈(201자, 리뷰에서 지적된 그 엣지케이스) → 400(수정 전 정규식이었다면 통과했을 입력), 정상 제목으로 수정 → 성공. (4) QnA 작성 시 제목 201자 → 400, 정상 제목 → 성공. 테스트로 만든 회원·게시글·QnA·주문은 모두 DB에서 직접 확인 후 삭제(회원 삭제로 연관 데이터 cascade 삭제됨을 재확인). 배포 후 운영 환경 정상(HTTP 200), 로그에 에러 없음 확인.
+---
+
+### 관리자 리뷰 목록에도 페이지네이션 적용 (2026.10.31)
+- **배경**: 관리자 화면 전체 페이지네이션 작업(회원/주문, 10.25)을 할 때 게시판/QnA/리뷰는 범위에서 빼고 나중에 따로 결정하기로 해둔 부분. 이번에 게시판/QnA는 관리자 화면(`AdminBoard.vue`/`AdminQna.vue`)이 일반 사용자 커뮤니티 화면(`BoardView.vue`/`QnaView.vue`)과 **같은 공개 API**(`/boards`, `/qna`)를 그대로 쓰고 있다는 게 확인돼(관리자 전용 엔드포인트가 따로 없음), 페이지네이션하려면 일반 사용자 화면까지 같이 손봐야 하는 더 큰 범위가 되고, 지금 데이터량도 적어(게시글 6건, QnA 7건) 급하지 않다고 보고 보류. 리뷰는 회원/주문처럼 관리자 전용 엔드포인트(`/admin/reviews`)가 따로 있어 안전하게 범위를 좁힐 수 있어 리뷰만 진행.
+- **문제**: `ReviewService.getAllReviews()`가 `findAllByOrderByCreatedAtDesc()`로 전체 리뷰를 한 번에 반환하고 있었음.
+- **해결**: `ReviewRepository.findAllByOrderByCreatedAtDesc()`를 `Pageable`을 받아 `Page<Review>`를 반환하도록 변경. `member`/`product`가 `*-to-one`(ManyToOne) 관계라 `OrderRepository`의 주문목록(orderItems가 `*-to-many`)처럼 fetch join과 페이지네이션이 충돌하는 문제가 없어서, id 2단계 조회 없이 `@EntityGraph` + `Pageable`을 그대로 붙일 수 있었음. `ReviewController.getAllReviews()`/`ReviewService.getAllReviews()`도 `Pageable`/`Page<ReviewResponseDto>`로 갱신.
+- **교차검증에서 확인한 것**: 백엔드만 바꾸고 프론트(`AdminReviews.vue`)를 안 건드린 1차 커밋에서, 이 화면이 여전히 `/admin/reviews` 응답을 배열로 가정하고 `v-for`/`.length`를 그대로 쓰고 있어 관리자 리뷰 화면이 깨진다는 지적을 받음 — `AdminMembers.vue`/`AdminOrders.vue`와 동일하게 `data?.content`를 쓰도록 수정하면서 같이 반영(프론트 저장소 트러블슈팅 참고).
+- **검증**: 운영 DB에 연결한 상태로(읽기 전용) Spring Data JPA 리포지토리 테스트 작성 후 실행 — `count()`와 `Page.getTotalElements()` 일치, 여러 페이지에 걸쳐 중복/누락 없이 조회됨(운영 DB엔 현재 리뷰가 1건뿐이라 `@Transactional`로 끝나면 자동 롤백되는 테스트 안에서만 임시로 리뷰 7건을 추가해 확인 — 리뷰는 회원-상품 조합에 unique 제약이 있어 상품 7개를 돌려가며 사용), `member`/`product`가 지연로딩 예외 없이 채워짐을 확인. 테스트 코드는 검증 전용이라 커밋하지 않고 삭제. 배포 후 운영 환경에서 `/api/admin/reviews`가 인증 없이는 여전히 401로 막혀있음과 신규 프로세스 기동 로그에 에러 없음을 확인.
 
 ## 빌드 및 배포
 

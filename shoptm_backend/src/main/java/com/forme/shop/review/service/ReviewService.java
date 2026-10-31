@@ -10,6 +10,8 @@ import com.forme.shop.review.dto.ReviewResponseDto;
 import com.forme.shop.review.entity.Review;
 import com.forme.shop.review.repository.ReviewRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -146,12 +148,9 @@ public class ReviewService {
         return ReviewResponseDto.from(review);
     }
 
-    // 관리자 - 전체 리뷰 목록 조회
-    public List<ReviewResponseDto> getAllReviews() {
+    // 관리자 - 전체 리뷰 목록 조회. 회원목록/주문목록과 같은 이유로 페이지네이션 적용.
+    public Page<ReviewResponseDto> getAllReviews(Pageable pageable) {
         SecurityUtil.requireAdmin();
-        return reviewRepository.findAllByOrderByCreatedAtDesc()
-                .stream()
-                .map(ReviewResponseDto::from)
-                .collect(Collectors.toList());
+        return reviewRepository.findAllByOrderByCreatedAtDesc(pageable).map(ReviewResponseDto::from);
     }
 }
