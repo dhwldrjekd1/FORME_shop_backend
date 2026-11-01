@@ -580,6 +580,13 @@ src/main/java/com/forme/shop/
 - **해결**: `ReviewRepository.findAllByOrderByCreatedAtDesc()`를 `Pageable`을 받아 `Page<Review>`를 반환하도록 변경. `member`/`product`가 `*-to-one`(ManyToOne) 관계라 `OrderRepository`의 주문목록(orderItems가 `*-to-many`)처럼 fetch join과 페이지네이션이 충돌하는 문제가 없어서, id 2단계 조회 없이 `@EntityGraph` + `Pageable`을 그대로 붙일 수 있었음. `ReviewController.getAllReviews()`/`ReviewService.getAllReviews()`도 `Pageable`/`Page<ReviewResponseDto>`로 갱신.
 - **교차검증에서 확인한 것**: 백엔드만 바꾸고 프론트(`AdminReviews.vue`)를 안 건드린 1차 커밋에서, 이 화면이 여전히 `/admin/reviews` 응답을 배열로 가정하고 `v-for`/`.length`를 그대로 쓰고 있어 관리자 리뷰 화면이 깨진다는 지적을 받음 — `AdminMembers.vue`/`AdminOrders.vue`와 동일하게 `data?.content`를 쓰도록 수정하면서 같이 반영(프론트 저장소 트러블슈팅 참고).
 - **검증**: 운영 DB에 연결한 상태로(읽기 전용) Spring Data JPA 리포지토리 테스트 작성 후 실행 — `count()`와 `Page.getTotalElements()` 일치, 여러 페이지에 걸쳐 중복/누락 없이 조회됨(운영 DB엔 현재 리뷰가 1건뿐이라 `@Transactional`로 끝나면 자동 롤백되는 테스트 안에서만 임시로 리뷰 7건을 추가해 확인 — 리뷰는 회원-상품 조합에 unique 제약이 있어 상품 7개를 돌려가며 사용), `member`/`product`가 지연로딩 예외 없이 채워짐을 확인. 테스트 코드는 검증 전용이라 커밋하지 않고 삭제. 배포 후 운영 환경에서 `/api/admin/reviews`가 인증 없이는 여전히 401로 막혀있음과 신규 프로세스 기동 로그에 에러 없음을 확인.
+---
+
+### 게시판/QnA에도 페이지네이션 적용 — 일반 사용자 커뮤니티 화면까지 함께 수정 (2026.11.01)
+- **배경**: 리뷰만 먼저 하고 보류해뒀던 게시판/QnA를 이번에 진행. 관리자 전용 엔드포인트가 따로 없어(바로 위 트러블슈팅 항목 참고), `/boards`/`/boards/search`/`/qna`를 바꾸면 그걸 그대로 쓰는 일반 사용자 화면(`BoardView.vue`/`QnaView.vue`)까지 같이 영향받는다는 걸 사용자에게 먼저 확인받고 진행.
+- **문제**: `BoardService.getAllBoards()`/`searchBoards()`, `QnaService.getAllQna()`가 전부 `findAll()`류로 전체를 한 번에 반환하고 있었음.
+- **해결**: `BoardRepository.findByIsActiveTrueOrderByCreatedAtDesc()`/`searchByTitle()`, `QnaRepository.findByIsActiveTrueOrderByCreatedAtDesc()` 모두 `Pageable`을 받아 `Page<T>`를 반환하도록 변경. `member`/`product`가 전부 `*-to-one`(ManyToOne) 관계라 리뷰목록과 같은 이유로 fetch join 충돌 문제 없이 바로 적용 가능했음. 대응하는 Service/Controller도 전부 `Pageable`/`Page<...DTO>`로 갱신.
+- **검증**: 운영 DB엔 활성(`is_active=true`) 게시글/QnA가 거의 없어서(게시글 0건, QnA 1건 — 나머지는 이미 삭제 상태) 여러 페이지에 걸친 동작은 `@Transactional` 자동 롤백 테스트 안에서만 임시로 게시글 7건/QnA 7건/게시글 검색용 4건을 추가해 확인 — `count()`/`Page.getTotalElements()` 일치, 여러 페이지에 걸쳐 중복/누락 없이 조회, `member`가 지연로딩 예외 없이 채워짐. 테스트 코드는 검증 전용이라 커밋하지 않고 삭제. 배포 후 운영 환경에서 `/api/boards`/`/api/qna`가 `Page` 응답(`content`/`totalElements`/`totalPages`) 모양으로 내려오는 것과 신규 프로세스 기동 로그에 에러 없음을 확인.
 
 ## 빌드 및 배포
 

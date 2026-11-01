@@ -5,6 +5,9 @@ import com.forme.shop.qna.dto.QnaResponseDto;
 import com.forme.shop.qna.service.QnaService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -17,11 +20,12 @@ public class QnaController {
 
     private final QnaService qnaService;
 
-    // 전체 Q&A 목록 조회
-    // GET /api/qna
+    // 전체 Q&A 목록 조회. 일반 Q&A 화면과 관리자 화면이 같은 엔드포인트를 쓴다.
+    // GET /api/qna?page=0&size=20
     @GetMapping("/qna")
-    public ResponseEntity<List<QnaResponseDto>> getAllQna() {
-        return ResponseEntity.ok(qnaService.getAllQna());
+    public ResponseEntity<Page<QnaResponseDto>> getAllQna(
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(qnaService.getAllQna(pageable));
     }
 
     // 특정 회원의 Q&A 목록 조회

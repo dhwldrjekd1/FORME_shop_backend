@@ -1,6 +1,8 @@
 package com.forme.shop.board.repository;
 
 import com.forme.shop.board.entity.Board;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -10,8 +12,11 @@ import java.util.List;
 public interface BoardRepository extends JpaRepository<Board, Long> {
 
     // SELECT * FROM boards WHERE is_active = true ORDER BY created_at DESC
-    // 삭제되지 않은 게시글 최신순 조회
-    List<Board> findByIsActiveTrueOrderByCreatedAtDesc();
+    // 삭제되지 않은 게시글 최신순 조회. 일반 게시판 화면(BoardView.vue)과 관리자 화면
+    // (AdminBoard.vue)이 같은 엔드포인트를 쓰는데 둘 다 findAll()류로 전체를 한 번에
+    // 반환하고 있었음(회원/주문/리뷰 목록과 같은 문제) — 페이지네이션 적용.
+    // member가 *-to-one이라 OrderRepository의 주문목록 같은 fetch join 충돌 문제 없음.
+    Page<Board> findByIsActiveTrueOrderByCreatedAtDesc(Pageable pageable);
 
     // SELECT * FROM boards WHERE member_id = ? AND is_active = true ORDER BY created_at DESC
     // 특정 회원이 작성한 게시글 최신순 조회
@@ -24,7 +29,7 @@ public interface BoardRepository extends JpaRepository<Board, Long> {
     // (BoardService.searchBoards가 이스케이프해서 넘김).
     @Query("SELECT b FROM Board b WHERE b.title LIKE CONCAT('%', :keyword, '%') ESCAPE '\\' " +
            "AND b.isActive = true ORDER BY b.createdAt DESC")
-    List<Board> searchByTitle(@Param("keyword") String escapedKeyword);
+    Page<Board> searchByTitle(@Param("keyword") String escapedKeyword, Pageable pageable);
 
     // UPDATE boards SET views = views + 1 WHERE id = ?
     // 조회수 1 증가 (게시글 상세 조회 시 호출)

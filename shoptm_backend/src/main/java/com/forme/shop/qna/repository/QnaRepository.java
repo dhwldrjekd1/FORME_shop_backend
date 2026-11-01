@@ -1,6 +1,8 @@
 package com.forme.shop.qna.repository;
 
 import com.forme.shop.qna.entity.Qna;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import java.util.List;
@@ -10,9 +12,11 @@ public interface QnaRepository extends JpaRepository<Qna, Long> {
     // member/product 는 LAZY 관계인데 QnaResponseDto.from()이 매 Q&A마다
     // member.getName()/product.getName()을 읽어서, EntityGraph 없이는 목록 조회마다 N+1이 발생함
     // SELECT * FROM qna WHERE is_active = true ORDER BY created_at DESC
-    // 삭제되지 않은 전체 Q&A 최신순 조회
+    // 삭제되지 않은 전체 Q&A 최신순 조회. 일반 Q&A 화면(QnaView.vue)과 관리자 화면(AdminQna.vue)이
+    // 같은 엔드포인트를 쓰는데 둘 다 findAll()류로 전체를 한 번에 반환하고 있었음 — 페이지네이션
+    // 적용. member/product가 *-to-one이라 fetch join + Pageable 충돌 문제 없음.
     @EntityGraph(attributePaths = {"member", "product"})
-    List<Qna> findByIsActiveTrueOrderByCreatedAtDesc();
+    Page<Qna> findByIsActiveTrueOrderByCreatedAtDesc(Pageable pageable);
 
     // SELECT * FROM qna WHERE member_id = ? AND is_active = true ORDER BY created_at DESC
     // 특정 회원의 Q&A 최신순 조회

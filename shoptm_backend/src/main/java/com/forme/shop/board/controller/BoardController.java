@@ -5,6 +5,9 @@ import com.forme.shop.board.dto.BoardResponseDto;
 import com.forme.shop.board.service.BoardService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.web.PageableDefault;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
@@ -16,11 +19,12 @@ public class BoardController {
 
     private final BoardService boardService;
 
-    // 전체 게시글 목록 조회
-    // GET /api/boards
+    // 전체 게시글 목록 조회. 일반 게시판 화면과 관리자 화면이 같은 엔드포인트를 쓴다.
+    // GET /api/boards?page=0&size=20
     @GetMapping("/boards")
-    public ResponseEntity<List<BoardResponseDto>> getAllBoards() {
-        return ResponseEntity.ok(boardService.getAllBoards());
+    public ResponseEntity<Page<BoardResponseDto>> getAllBoards(
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(boardService.getAllBoards(pageable));
     }
 
     // 게시글 단건 조회 + 조회수 증가
@@ -40,11 +44,12 @@ public class BoardController {
     }
 
     // 게시글 검색
-    // GET /api/boards/search?keyword=원두
+    // GET /api/boards/search?keyword=원두&page=0&size=20
     @GetMapping("/boards/search")
-    public ResponseEntity<List<BoardResponseDto>> searchBoards(
-            @RequestParam String keyword) {
-        return ResponseEntity.ok(boardService.searchBoards(keyword));
+    public ResponseEntity<Page<BoardResponseDto>> searchBoards(
+            @RequestParam String keyword,
+            @PageableDefault(size = 20) Pageable pageable) {
+        return ResponseEntity.ok(boardService.searchBoards(keyword, pageable));
     }
 
     // 게시글 작성

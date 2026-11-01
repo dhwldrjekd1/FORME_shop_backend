@@ -9,6 +9,8 @@ import com.forme.shop.common.util.LikeEscapeUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.service.MemberService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -24,12 +26,9 @@ public class BoardService {
     private final MemberService memberService;
 
     // 전체 게시글 목록 조회
-    // 삭제되지 않은 게시글만 최신순으로 반환
-    public List<BoardResponseDto> getAllBoards() {
-        return boardRepository.findByIsActiveTrueOrderByCreatedAtDesc()
-                .stream()
-                .map(BoardResponseDto::from)
-                .collect(Collectors.toList());
+    // 삭제되지 않은 게시글만 최신순으로 반환. 페이지네이션 적용(회원/주문/리뷰 목록과 같은 이유).
+    public Page<BoardResponseDto> getAllBoards(Pageable pageable) {
+        return boardRepository.findByIsActiveTrueOrderByCreatedAtDesc(pageable).map(BoardResponseDto::from);
     }
 
     // 존재 여부·삭제 여부 확인 후 게시글을 반환. IllegalArgumentException을 쓰는 이유:
@@ -78,11 +77,8 @@ public class BoardService {
 
     // 제목으로 게시글 검색 — LikeEscapeUtil 참고 (와일드카드 문자를 그대로 넘기면 검색이
     // 부정확해지는 문제를 막기 위한 이스케이프).
-    public List<BoardResponseDto> searchBoards(String keyword) {
-        return boardRepository.searchByTitle(LikeEscapeUtil.escape(keyword))
-                .stream()
-                .map(BoardResponseDto::from)
-                .collect(Collectors.toList());
+    public Page<BoardResponseDto> searchBoards(String keyword, Pageable pageable) {
+        return boardRepository.searchByTitle(LikeEscapeUtil.escape(keyword), pageable).map(BoardResponseDto::from);
     }
 
     // 게시글 작성

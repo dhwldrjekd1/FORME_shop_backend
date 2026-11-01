@@ -10,6 +10,8 @@ import com.forme.shop.qna.dto.QnaResponseDto;
 import com.forme.shop.qna.entity.Qna;
 import com.forme.shop.qna.repository.QnaRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,11 +39,9 @@ public class QnaService {
     // 전체 Q&A 목록 조회 (일반회원)
     // is_active = true 인 Q&A 만 최신순으로 반환. 비밀글은 작성자 본인/관리자가 아니면
     // content/answer를 가려서 내려준다(목록 자체는 누구나 볼 수 있되 내용은 비공개).
-    public List<QnaResponseDto> getAllQna() {
-        return qnaRepository.findByIsActiveTrueOrderByCreatedAtDesc()
-                .stream()
-                .map(qna -> QnaResponseDto.from(qna, canViewSecret(qna)))
-                .collect(Collectors.toList());
+    public Page<QnaResponseDto> getAllQna(Pageable pageable) {
+        return qnaRepository.findByIsActiveTrueOrderByCreatedAtDesc(pageable)
+                .map(qna -> QnaResponseDto.from(qna, canViewSecret(qna)));
     }
 
     // 특정 회원의 Q&A 목록 조회 ("내 문의" — 본인 또는 관리자만 조회 가능)
