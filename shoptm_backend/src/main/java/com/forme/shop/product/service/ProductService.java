@@ -297,6 +297,14 @@ public class ProductService {
                     "다른 곳에서 이미 이 상품 정보가 변경되었습니다. 새로고침 후 다시 시도해주세요.");
         }
 
+        // 아래에서 어떤 필드든 바뀌기 전에(이미지 관련 필드 중 thumbnailUrl도 이 메서드가 직접
+        // 바꿀 수 있어서) 기존 이미지 URL들을 미리 기억해둔다 — 저장이 성공한 뒤, 더 이상 아무
+        // 곳에서도 안 쓰이게 된 업로드 파일만 정리하는 데 쓴다(교차검증에서 발견 — 이미지를
+        // 교체할 때마다 예전 파일이 참조하는 곳 없이 디스크에 영구히 쌓이고 있었음). 저장이
+        // 실패하면 이 메서드 끝의 catch에서 새로 올린 파일만 정리하고 이 집합은 쓰지 않는다 —
+        // product가 실제로 반영 안 됐으니 "기존" 파일은 여전히 쓰이는 중인 게 맞다.
+        java.util.Set<String> oldImageUrls = currentImageUrls(product);
+
         if (dto.getCategoryId() != null) {
             Category category = categoryRepository.findById(dto.getCategoryId())
                     .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 카테고리입니다."));
@@ -368,13 +376,41 @@ public class ProductService {
         // 걸릴 경우 그 실패가 이 메서드 try/catch 바깥에서 터져 방금 저장한 이미지 파일이 치울
         // 방법 없이 디스크에 남고, 사용자에게도 다른 메서드들과 다른 날것의 에러가 그대로 노출됐다.
         // saveAndFlush로 커밋을 이 메서드 안으로 끌어와 같은 방식으로 처리한다.
+        Product saved;
         try {
-            return ProductResponseDto.from(productRepository.saveAndFlush(product));
+            saved = productRepository.saveAndFlush(product);
         } catch (DataIntegrityViolationException e) {
             savedUrls.forEach(this::deleteUploadedFile);
             if (!isBrandRecommendConflict(e)) throw e;
             throw new IllegalArgumentException("방금 다른 관리자가 같은 브랜드의 추천상품을 변경했습니다. 새로고침 후 다시 시도해주세요.");
         }
+
+        // 저장은 이미 끝났으니, 이제부터는 순수 정리 작업이다 — 여기서 예외가 그대로 올라가면
+        // 이 메서드를 감싼 @Transactional 전체가 롤백되면서 DB는 방금 지운 파일을 다시 가리키는
+        // 옛 상태로 돌아가는데, 파일 삭제는 트랜잭션이 아니라서 되돌릴 수 없어 끊어진 이미지가
+        // 남을 수 있었다(교차검증에서 발견). 그래서 정리 과정의 실패는 저장 성공 자체를 절대
+        // 되돌리지 않도록 이 메서드 안에서 끝까지 처리하고 로그만 남긴다.
+        try {
+            // 교체 전 기억해둔 기존 이미지 중 최종 결과에 더 이상 남아있지 않은(= 새 이미지로
+            // 완전히 대체된) 것만 디스크에서 지운다. 외부 URL을 직접 지정하는 경로(위
+            // dto.getImageUrl() 분기)도 있어, 우리가 올린 파일이 아닐 수 있는 URL을 지우려
+            // 시도하지 않도록 "/uploads/"로 시작하는 것만 대상으로 한다 — deleteUploadedFile
+            // 자체도 존재하지 않는 파일은 조용히 건너뛰므로 이중 방어. 또한 FileController
+            // (/api/admin/files)가 업로드 폴더 전체를 "서버 이미지" 선택 목록으로 보여줘서 같은
+            // 파일이 다른 상품에도 그대로 재사용될 수 있어(교차검증에서 발견 — 처음엔 이 상품만
+            // 보고 지웠었음), 다른 상품이 아직 그 URL을 쓰고 있지 않은지 DB로 한 번 더 확인한다.
+            java.util.Set<String> finalImageUrls = currentImageUrls(product);
+            for (String oldUrl : oldImageUrls) {
+                if (oldUrl.startsWith("/uploads/") && !finalImageUrls.contains(oldUrl)
+                        && !productRepository.existsOtherProductReferencingImage(product.getId(), oldUrl)) {
+                    deleteUploadedFile(oldUrl);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("상품 수정 후 안 쓰는 업로드 이미지 정리 중 오류 — 수동 확인 필요 (productId={})", product.getId(), e);
+        }
+
+        return ProductResponseDto.from(saved);
     }
 
     // 추천 전체 초기화 (모든 상품 대상)
@@ -488,6 +524,29 @@ public class ProductService {
             }
             throw e;
         }
+    }
+
+    // product가 참조하는 모든 이미지 URL(갤러리 imageUrl/imageUrls, 대표 thumbnailUrl, 큐레이터
+    // curatorImageUrl)을 합쳐 중복 없는 집합으로 돌려준다. AdminProducts.vue의 "서버 이미지"
+    // 선택기가 /uploads/ 전체를 하나의 공용 풀로 보여주고, thumbnailUrl/curatorImageUrl도 그
+    // 풀에서 그대로 골라 쓸 수 있어서(교차검증에서 발견 — 갤러리 이미지만 보고 "이제 안 쓰는
+    // 파일"로 착각하면, 같은 상품의 대표/큐레이터 이미지로 여전히 쓰이는 파일을 지울 수 있었음),
+    // updateProduct()의 정리 로직이 이 네 필드를 전부 같은 기준으로 봐야 한다.
+    private java.util.Set<String> currentImageUrls(Product product) {
+        java.util.Set<String> urls = new java.util.HashSet<>();
+        if (product.getImageUrl() != null && !product.getImageUrl().isBlank()) {
+            urls.add(product.getImageUrl());
+        }
+        if (product.getImageUrls() != null && !product.getImageUrls().isBlank()) {
+            urls.addAll(java.util.Arrays.asList(product.getImageUrls().split(",")));
+        }
+        if (product.getThumbnailUrl() != null && !product.getThumbnailUrl().isBlank()) {
+            urls.add(product.getThumbnailUrl());
+        }
+        if (product.getCuratorImageUrl() != null && !product.getCuratorImageUrl().isBlank()) {
+            urls.add(product.getCuratorImageUrl());
+        }
+        return urls;
     }
 
     // saveImages의 정리 과정에서 실제로 지우지 못한 파일이 있으면(권한 문제, 이미 없어짐 등)

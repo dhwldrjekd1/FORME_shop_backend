@@ -96,4 +96,23 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     // 브랜드별 추천 상품 조회 (추천 해제용)
     List<Product> findByBrandAndIsRecommendTrueAndIsActiveTrue(String brand);
+
+    // ProductService.updateProduct()가 상품 이미지를 교체한 뒤 "더 이상 아무도 안 쓰는" 파일만
+    // 디스크에서 지우려 할 때 쓴다. FileController(/api/admin/files)가 uploads 폴더 전체를
+    // "서버 이미지" 선택 목록으로 보여주고, 관리자가 그걸 다른 상품의 갤러리(imageUrl/imageUrls)
+    // 뿐 아니라 대표(thumbnailUrl)·큐레이터(curatorImageUrl) 이미지로도 그대로 재사용할 수 있어서,
+    // 업로드 파일 하나가 여러 상품·여러 용도에서 동시에 참조될 수 있다(교차검증에서 발견 — 이
+    // 확인 없이 "지금 수정 중인 상품의 갤러리"만 보고 지우면, 다른 상품이나 같은 상품의 다른
+    // 용도로 아직 쓰고 있는 파일을 지워버릴 수 있었음). imageUrls는 콤마로 구분된 문자열이라
+    // LIKE로 "정확히 그 URL이 콤마 경계에 걸쳐 있는" 네 가지 위치(단독/시작/끝/중간)를 모두
+    // 확인해야 느슨한 부분일치(예: 다른 URL의 일부 문자열과 우연히 겹치는 경우)를 피할 수 있다.
+    @Query("SELECT COUNT(p) > 0 FROM Product p WHERE p.id <> :excludeId AND (" +
+            "p.imageUrl = :url " +
+            "OR p.thumbnailUrl = :url " +
+            "OR p.curatorImageUrl = :url " +
+            "OR p.imageUrls = :url " +
+            "OR p.imageUrls LIKE CONCAT(:url, ',%') " +
+            "OR p.imageUrls LIKE CONCAT('%,', :url) " +
+            "OR p.imageUrls LIKE CONCAT('%,', :url, ',%'))")
+    boolean existsOtherProductReferencingImage(@Param("excludeId") Long excludeId, @Param("url") String url);
 }

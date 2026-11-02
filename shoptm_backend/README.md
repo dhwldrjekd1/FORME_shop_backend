@@ -587,6 +587,13 @@ src/main/java/com/forme/shop/
 - **문제**: `BoardService.getAllBoards()`/`searchBoards()`, `QnaService.getAllQna()`가 전부 `findAll()`류로 전체를 한 번에 반환하고 있었음.
 - **해결**: `BoardRepository.findByIsActiveTrueOrderByCreatedAtDesc()`/`searchByTitle()`, `QnaRepository.findByIsActiveTrueOrderByCreatedAtDesc()` 모두 `Pageable`을 받아 `Page<T>`를 반환하도록 변경. `member`/`product`가 전부 `*-to-one`(ManyToOne) 관계라 리뷰목록과 같은 이유로 fetch join 충돌 문제 없이 바로 적용 가능했음. 대응하는 Service/Controller도 전부 `Pageable`/`Page<...DTO>`로 갱신.
 - **검증**: 운영 DB엔 활성(`is_active=true`) 게시글/QnA가 거의 없어서(게시글 0건, QnA 1건 — 나머지는 이미 삭제 상태) 여러 페이지에 걸친 동작은 `@Transactional` 자동 롤백 테스트 안에서만 임시로 게시글 7건/QnA 7건/게시글 검색용 4건을 추가해 확인 — `count()`/`Page.getTotalElements()` 일치, 여러 페이지에 걸쳐 중복/누락 없이 조회, `member`가 지연로딩 예외 없이 채워짐. 테스트 코드는 검증 전용이라 커밋하지 않고 삭제. 배포 후 운영 환경에서 `/api/boards`/`/api/qna`가 `Page` 응답(`content`/`totalElements`/`totalPages`) 모양으로 내려오는 것과 신규 프로세스 기동 로그에 에러 없음을 확인.
+---
+
+### 상품 이미지 교체 시 이전 업로드 파일이 디스크에 영구히 남음 (2026.11.02)
+- **문제**: `ProductService.updateProduct()`가 이미지를 교체할 때(파일 업로드 또는 URL 직접 지정) `product.setImageUrl()`/`setImageUrls()`로 새 값만 덮어쓰고, 교체되기 전 파일을 `uploadDir`에서 지우는 코드가 없었음. 상품 이미지를 바꿀 때마다 예전 파일이 참조하는 곳 없이 디스크에 계속 쌓이는 구조. (다른 방향에서 버그를 찾아보다가 발견 — 이전에 "범위 밖"으로 미뤄뒀던 항목.)
+- **해결**: `updateProduct()` 맨 앞에서(어떤 필드든 바뀌기 전) 기존 이미지 URL들을 먼저 기억해두고, 저장이 성공한 뒤 더 이상 안 쓰이는 `/uploads/` 파일만 지운다. 정리는 저장 자체와 분리된 별도 try/catch로 감싸 실패해도 로그만 남기고(교차검증에서 발견 — 정리 과정의 예외가 그대로 올라가면 이미 성공한 저장까지 롤백시켜, 이미 지운 파일은 복구 못하는데 DB는 그 파일을 다시 가리키는 상태로 돌아갈 수 있었음) 저장 성공 자체를 절대 되돌리지 않도록 함.
+- **교차검증에서 확인한 것**: (1) `FileController`(`/api/admin/files`)가 업로드 폴더 전체를 "서버 이미지" 선택 목록으로 보여주고, 관리자가 그걸 다른 상품의 갤러리뿐 아니라 대표(`thumbnailUrl`)·큐레이터(`curatorImageUrl`) 이미지로도 재사용할 수 있어서, 파일 하나가 여러 상품·여러 용도에서 동시에 참조될 수 있다는 지적을 받음 — 처음엔 "지금 수정 중인 상품의 갤러리"만 보고 지우는 구현이었는데, 다른 상품이 그 파일을 아직 쓰고 있는지 DB로 먼저 확인(`ProductRepository.existsOtherProductReferencingImage`)하도록 수정하고, 추적 대상 URL도 갤러리(`imageUrl`/`imageUrls`) 둘뿐이던 걸 `thumbnailUrl`/`curatorImageUrl`까지 넷으로 확장. (2) 그 확인-후-삭제 사이에 다른 관리자가 거의 동시에 같은 파일을 재사용하는 극히 좁은 레이스 창은 남아있음 — 관리자 전용 저빈도 작업이고 결과도 "깨진 이미지 하나, 재업로드로 바로 복구 가능"이라 당장은 받아들이기로 함.
+- **검증**: `@Transactional` 자동 롤백 테스트로 직접 확인 — 상품 A(갤러리로 파일 2개 참조)와 상품 B(그중 하나를 썸네일로 재사용)를 만들고, A의 이미지를 완전히 새 URL로 교체 → A만 쓰던 파일은 지워지고, B가 썸네일로 여전히 쓰는 공유 파일은 남아있음을 확인. 테스트가 만든 더미 파일은 테스트 종료 시 직접 삭제, DB 행은 롤백으로 정리. 참고로 운영 DB엔 현재 `/uploads/` 경로를 쓰는 상품이 하나도 없어(전부 `/new`, `/images` 경로의 사전 등록 이미지) 이 버그의 실제 운영 영향은 지금까지는 없었음. 배포 후 운영 환경 정상(HTTP 200), 로그에 에러 없음 확인.
 
 ## 빌드 및 배포
 
