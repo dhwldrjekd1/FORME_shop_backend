@@ -26,9 +26,20 @@ public class MemberRequestDto {
         @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")  // 최소 8자 검증
         private String password;
 
-        @NotBlank(message = "이름을 입력해주세요.")
+        // Member.name 컬럼 길이(50)와 맞춤 — 없으면 DB가 거부하는 DataIntegrityViolationException이
+        // 그대로 500으로 노출됨(주문/게시판/QnA DTO에서 고쳤던 것과 같은 종류인데 회원 쪽만
+        // 빠져있었음 — 다른 방향에서 버그를 찾다가 발견). @NotBlank와 @Size를 따로 두면
+        // 공백만 51자처럼 둘 다 동시에 실패하는 입력에서 GlobalExceptionHandler가 필드별
+        // 에러를 HashMap에 담다가 한쪽 메시지를 덮어써버리는 문제가 있어(BoardRequestDto.Update.title과
+        // 동일한 이유 — 교차검증에서 발견), 하나의 정규식으로 합친다. 길이 확인에 "\z"를 쓰는
+        // 이유도 그쪽과 동일("$"는 끝의 줄바꿈 앞에서도 매칭돼 길이 제한이 우회될 수 있었음).
+        @Pattern(regexp = "(?sU)(?=^.{0,50}\\z).*\\S.*", message = "이름을 1~50자로 입력해주세요.")
         private String name;
+
+        @Size(max = 20, message = "전화번호는 20자 이하여야 합니다.")
         private String phone;
+
+        @Size(max = 255, message = "주소는 255자 이하여야 합니다.")
         private String address;
 
         // 주석엔 "필수"라고 돼 있었지만 정작 검증 애노테이션이 없어서, 프론트(SignupView.vue)는
@@ -71,18 +82,28 @@ public class MemberRequestDto {
         // 플래그: s(DOTALL) 없으면 개행이 포함된 이름이 매치 실패하고, U(UNICODE_CHARACTER_CLASS)
         // 없으면 \S가 ASCII 공백만 인식해 전각 공백(U+3000, 한국어 IME에서 흔함)이나 줄바꿈
         // 없는 공백(U+00A0, 복사-붙여넣기에서 흔함)만으로 된 이름을 걸러내지 못한다.
-        @Pattern(regexp = "(?sU).*\\S.*", message = "이름을 입력해주세요.")
+        // Member.name 컬럼 길이(50)와도 맞춰야 해서, "비어있지 않음"과 "길이 제한"을 하나의
+        // 정규식으로 합친다(BoardRequestDto.Update.title과 동일한 이유 — @Pattern과 @Size를
+        // 따로 두면 둘 다 동시에 실패하는 입력에서 GlobalExceptionHandler가 필드별 에러를
+        // HashMap에 담다가 한쪽 메시지를 덮어씀). 길이 확인에 "$" 대신 "\z"를 쓰는 이유도
+        // BoardRequestDto.Update.title 참고("$"는 끝의 줄바꿈 앞에서도 매칭돼 길이 제한이
+        // 우회될 수 있었음).
+        @Pattern(regexp = "(?sU)(?=^.{0,50}\\z).*\\S.*", message = "이름을 1~50자로 입력해주세요.")
         private String name;
 
         // phone은 Register(가입)에서도 애초에 필수가 아니라(@NotBlank 없음) 실제로 빈 값으로
         // 남아있는 계정이 있을 수 있다 — 마이페이지(MyPageView.vue)가 저장할 때마다 폼의 현재
         // phone 값을 그대로 다시 보내므로(전화번호를 등록한 적 없으면 빈 문자열), 여기에 공백
-        // 거부를 걸면 그런 회원이 이름 등 다른 항목만 바꾸려 해도 요청 전체가 실패한다.
+        // 거부를 걸면 그런 회원이 이름 등 다른 항목만 바꾸려 해도 요청 전체가 실패한다. 길이
+        // 제한(Member.phone 컬럼 길이 20)만 추가 — @Size는 빈 문자열(length 0)도 그대로 통과
+        // 시키므로 이 "빈 값 허용" 특성과 충돌하지 않는다.
+        @Size(max = 20, message = "전화번호는 20자 이하여야 합니다.")
         private String phone;
 
         // address는 phone과 달리 마이페이지 저장 요청에 아예 포함되지 않는(그 화면에 입력
-        // UI 자체가 없음) 필드라 이 문제가 없다 — name과 동일하게 "보냈는데 공백뿐임"만 거른다.
-        @Pattern(regexp = "(?sU).*\\S.*", message = "주소를 입력해주세요.")
+        // UI 자체가 없음) 필드라 그 문제가 없다 — name과 동일하게 "비어있지 않음"+"길이 제한"을
+        // 하나로 합친다(Member.address 컬럼 길이 255).
+        @Pattern(regexp = "(?sU)(?=^.{0,255}\\z).*\\S.*", message = "주소를 1~255자로 입력해주세요.")
         private String address;
 
         // 가입 시(Register.password)와 동일한 최소 길이를 요구한다. 예전엔 여기에 검증이
@@ -95,7 +116,17 @@ public class MemberRequestDto {
         // 비밀번호를 대신 바꿔줄 땐 필요 없음.
         private String currentPassword;
 
+        // Register.height/weight와 동일한 범위(가입 화면과 같은 기준) — 이 Update 쪽엔
+        // 검증이 전혀 없어서, 마이페이지에서 키/몸무게를 음수나 비현실적인 값으로 바꿔도
+        // 그대로 저장되고 그 값이 /size/recommend(사이즈 추천)에 그대로 들어가 엉뚱한 사이즈를
+        // 추천하는 문제가 있었음(다른 방향에서 버그를 찾다가 발견). @DecimalMin/@Max는
+        // null이면 통과시키므로(선택 입력이라 null 허용) Register처럼 @NotNull은 안 둔다.
+        @DecimalMin(value = "100", message = "키는 100cm 이상이어야 합니다.")
+        @DecimalMax(value = "250", message = "키는 250cm 이하여야 합니다.")
         private Double height;
+
+        @DecimalMin(value = "30", message = "몸무게는 30kg 이상이어야 합니다.")
+        @DecimalMax(value = "200", message = "몸무게는 200kg 이하여야 합니다.")
         private Double weight;
 
         // fit은 Register에서도 실제로는 필수 검증이 없지만(주석만 "필수"), 마이페이지에서는
