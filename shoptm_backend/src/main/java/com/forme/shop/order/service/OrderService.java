@@ -527,6 +527,37 @@ public class OrderService {
     private static final java.util.Set<String> VALID_ORDER_STATUSES = java.util.Set.of(
             "PENDING", "PAID", "PREPARING", "SHIPPED", "DELIVERED", "CANCELLED");
 
+    // Delivery.status가 바뀔 때 Orders.status를 어떤 값으로 맞출지 — DeliveryService.
+    // updateDelivery()가 호출한다(DeliveryService.createDelivery()는 등록 시 기본값이 READY라
+    // 이 동기화를 아예 호출하지 않는다 — 등록만으로 PAID→PREPARING까지 밀리면 아직 발송 전인
+    // 주문의 회원 본인취소(cancelOrder, status=="PAID"만 허용)가 막혀버리는 회귀가 있었음,
+    // 교차검증에서 발견). updateDelivery()에서는 READY도 매핑해둬야 한다 — 관리자가 실수로
+    // DELIVERED까지 찍었다가 READY로 되돌리는 정정도 지원되는데(DeliveryService의 shippedAt/
+    // deliveredAt 되돌림 로직 참고), 그때 주문 상태는 그대로 DELIVERED에 멈춰있으면 안 된다
+    // (교차검증에서 발견). IN_TRANSIT과 OUT_FOR_DELIVERY는 둘 다 SHIPPED로 묶는다 —
+    // Orders.status는 배송의 세부 진행 단계를 구분할 만큼 세분화돼 있지 않고(SHIPPED 하나뿐),
+    // 고객 입장에선 어차피 둘 다 "배송 중"이다.
+    private static final java.util.Map<String, String> DELIVERY_TO_ORDER_STATUS = java.util.Map.of(
+            "READY", "PREPARING",
+            "IN_TRANSIT", "SHIPPED",
+            "OUT_FOR_DELIVERY", "SHIPPED",
+            "DELIVERED", "DELIVERED");
+
+    // DeliveryService.updateDelivery()가 배송 상태를 바꾼 뒤 호출 — 지금까지 주문 상태와
+    // 배송 상태가 서로 완전히 독립돼 있어서, 배송 패널에서 배송완료까지 처리해도 주문목록엔
+    // 그 이전 상태가 계속 보이는 불일치가 있었다(다른 방향에서 버그를 찾다가 발견). 매핑에
+    // 없는 배송 상태는 그냥 무시한다. updateStatusIfPaidOrFurther를 써서 CANCELLED뿐 아니라
+    // PENDING(결제 안 된 데모 주문)도 건드리지 않는다 — 배송 정보는 결제된 주문에만 등록되는
+    // 게 정상이지만, 그 전제가 깨진 경우에도(교차검증에서 발견) 이 동기화가 결제 없이 생성된
+    // 주문을 실수로 PREPARING/SHIPPED/DELIVERED로 밀어버리지 않도록 막는다.
+    @Transactional
+    public void syncStatusFromDelivery(Long orderId, String deliveryStatus) {
+        String mapped = DELIVERY_TO_ORDER_STATUS.get(deliveryStatus);
+        if (mapped != null) {
+            orderRepository.updateStatusIfPaidOrFurther(orderId, mapped);
+        }
+    }
+
     // 관리자 - 주문 상태 변경
     @Transactional
     public OrderResponseDto updateOrderStatus(Long orderId, OrderRequestDto.UpdateStatus dto) {

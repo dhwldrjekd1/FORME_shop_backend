@@ -70,6 +70,11 @@ public class DeliveryService {
                 .trackingNumber(dto.getTrackingNumber())
                 .build();
 
+        // 배송 정보를 처음 등록할 때(Delivery.status 기본값 READY)는 주문 상태를 같이
+        // 밀지 않는다 — READY는 아직 실제로 발송 전인데, 등록만으로 PREPARING까지 밀어버리면
+        // 회원 본인 취소(cancelOrder)가 status를 정확히 "PAID"로만 비교하는 조건에 걸려
+        // 아직 발송 전인데도 취소가 막히는 회귀가 생긴다(교차검증에서 발견). updateDelivery()가
+        // 실제 발송 단계(IN_TRANSIT 이상)로 바뀔 때만 동기화하도록 아래에서 따로 처리한다.
         return DeliveryResponseDto.from(deliveryRepository.save(delivery));
     }
 
@@ -93,6 +98,15 @@ public class DeliveryService {
         // null 체크 후 값이 있을 때만 수정
         if (dto.getCarrier()        != null) delivery.setCarrier(dto.getCarrier());
         if (dto.getTrackingNumber() != null) delivery.setTrackingNumber(dto.getTrackingNumber());
+
+        // DeliveryRequestDto.Update.status는 @NotBlank라 AdminOrders.vue가 매번 현재 상태
+        // 그대로를 다시 보낸다(바로 위 trackingNumber 주석 참고) — 즉 dto.getStatus() != null은
+        // "상태가 바뀌었다"가 아니라 "상태 필드가 있다"는 뜻일 뿐이라, 실제로 바뀌었는지는
+        // 바뀌기 전 값과 직접 비교해야 한다. 이 비교 없이 아래 주문 상태 동기화를 그대로 걸면
+        // 운송장 번호만 고치는 수정에도 매번 주문 상태가(예: PAID→PREPARING) 밀려버려서,
+        // 아직 발송 전인 주문의 회원 본인취소가 막히는 회귀가 생긴다(교차검증에서 발견).
+        String previousStatus = delivery.getStatus();
+        boolean statusChanged = dto.getStatus() != null && !dto.getStatus().equals(previousStatus);
 
         // 배송 상태 변경 시 시간 자동 기록 — 상태값 자체가 아니라 흐름상 순서를 기준으로
         // shippedAt/deliveredAt을 맞춘다. 예전엔 "IN_TRANSIT으로 바뀔 때만" 발송 시간을
@@ -130,6 +144,24 @@ public class DeliveryService {
         // updatedAt을 expectedUpdatedAt으로 그대로 돌려보내 아무도 안 건드렸는데도 "다른 곳에서
         // 이미 변경됨" 오류가 나는 모순이 생긴다(교차검증에서 발견).
         deliveryRepository.saveAndFlush(delivery);
-        return DeliveryResponseDto.from(delivery);
+
+        // 주문 자체의 상태(Orders.status)와 배송 상태(Delivery.status)가 지금까지 서로 완전히
+        // 독립된 상태였음 — 관리자가 이 배송 패널에서 배송완료까지 처리해도 주문목록에 쓰이는
+        // Orders.status는 그대로 남아있어서, 예를 들어 실제로는 배송이 끝났는데 고객 주문목록엔
+        // 계속 "결제완료"로 보일 수 있었다(다른 방향에서 버그를 찾다가 발견). 배송 상태가 실제로
+        // 바뀌었을 때만(statusChanged — 위 설명 참고) 대응하는 주문 상태로 맞춘다.
+        Long orderId = delivery.getOrders().getId();
+        String orderStatus = delivery.getOrders().getStatus();  // 동기화 전(=현재) 주문 상태
+        if (statusChanged) {
+            orderService.syncStatusFromDelivery(orderId, dto.getStatus());
+            // 동기화에 쓰는 원자적 UPDATE가 영속성 컨텍스트를 비워서, 이 시점에 delivery.getOrders()
+            // .getStatus()를 다시 읽으면 갱신 전의 캐시된 값이 나올 수 있다 — 응답에 실어줄 최신
+            // 값을 DB에서 다시 조회한다(findById().map()이 못 찾으면, 이 메서드 시작부터 같은
+            // 트랜잭션 안에서 방금 조회·수정한 주문이라 사실상 일어날 수 없는 경우라 동기화 전
+            // 값으로 안전하게 대체).
+            orderStatus = orderRepository.findById(orderId).map(Orders::getStatus).orElse(orderStatus);
+        }
+
+        return DeliveryResponseDto.from(delivery, orderStatus);
     }
 }

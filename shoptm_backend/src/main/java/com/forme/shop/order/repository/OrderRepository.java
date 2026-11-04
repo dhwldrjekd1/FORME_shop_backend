@@ -47,6 +47,16 @@ public interface OrderRepository extends JpaRepository<Orders, Long> {
     @Query("UPDATE Orders o SET o.status = :newStatus, o.updatedAt = CURRENT_TIMESTAMP WHERE o.id = :orderId AND o.status <> 'CANCELLED'")
     int updateStatusIfNotCancelled(@Param("orderId") Long orderId, @Param("newStatus") String newStatus);
 
+    // OrderService.syncStatusFromDelivery() 전용: 배송 상태 변경에 맞춰 주문 상태를 밀 때,
+    // CANCELLED뿐 아니라 PENDING(결제 없는 데모 주문)도 건드리지 않는다 — 배송 정보는 결제된
+    // 주문에만 생기는 게 정상이지만, 그 전제가 어떤 경로로든 깨져 있어도(교차검증에서 발견)
+    // 결제 자체가 없는 주문을 배송 쪽 갱신만으로 PREPARING/SHIPPED/DELIVERED로 밀어버리는
+    // 일은 막는다.
+    @Modifying(clearAutomatically = true)
+    @Query("UPDATE Orders o SET o.status = :newStatus, o.updatedAt = CURRENT_TIMESTAMP " +
+           "WHERE o.id = :orderId AND o.status NOT IN ('CANCELLED', 'PENDING')")
+    int updateStatusIfPaidOrFurther(@Param("orderId") Long orderId, @Param("newStatus") String newStatus);
+
     // 결제 없이 생성된 데모 주문(PENDING)이 일정 시간 넘게 그대로 방치돼 있는지 찾는 데 사용
     // (OrderExpiryScheduler 참고) — 그런 주문은 생성 시점에 이미 실제 재고를 차감해가지만
     // 결제를 거치지 않으므로, 누군가 수동으로 취소하지 않는 한 그 재고가 영구히 묶여있게 된다.
