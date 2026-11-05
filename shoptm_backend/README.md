@@ -609,6 +609,13 @@ src/main/java/com/forme/shop/
 - **해결**: `OrderService.syncStatusFromDelivery()`를 새로 추가해 `DeliveryService.updateDelivery()`가 배송 상태를 바꾼 뒤(READY→PREPARING, IN_TRANSIT/OUT_FOR_DELIVERY→SHIPPED, DELIVERED→DELIVERED) 호출하도록 연결. `OrderRepository.updateStatusIfPaidOrFurther`(새 원자적 UPDATE, CANCELLED와 PENDING 둘 다 건드리지 않음)를 써서 취소된 주문이나 결제 안 된 데모 주문이 이 동기화로 되살아나지 않게 함.
 - **교차검증에서 확인한 것(여러 라운드)**: (1) 처음엔 배송을 처음 등록할 때(기본값 READY)도 동기화를 걸었는데, 그러면 등록만으로 PAID→PREPARING까지 밀려서 회원 본인취소(`cancelOrder`, status가 정확히 "PAID"일 때만 허용)가 아직 발송도 안 한 주문에서 막혀버리는 회귀가 지적됨 — `createDelivery()`에서는 동기화를 호출하지 않도록 뺌(등록 자체가 아니라 그 이후의 실제 상태 변경부터만 동기화). (2) 새 원자적 UPDATE가 CANCELLED만 막고 PENDING(결제 없는 데모 주문)은 안 막아서, 어떤 경로로든 결제 안 된 주문에 배송 정보가 생기면 결제 확인 없이 상태가 밀릴 수 있다는 지적 — PENDING도 같이 제외. (3) `DeliveryRequestDto.Update.status`가 `@NotBlank`라 `AdminOrders.vue`가 운송장번호만 고치는 요청에도 매번 "현재" 상태값을 그대로 다시 보내서(`dto.getStatus() != null`만 보면 항상 참이 됨), 그 흔한 경우에도 매번 동기화가 다시 실행돼 다른 경로로 바뀐 주문 상태를 덮어쓸 뻔함 — 수정 전의 배송 상태값과 실제로 비교해서 "진짜 바뀌었을 때만" 동기화하도록 수정. (4) 그 "되돌림"(DELIVERED→READY 같은 관리자 정정)도 지원해야 해서 READY도 매핑에 다시 포함시킴(등록 시 자동 동기화는 여전히 안 함 — (1)과 구분).
 - **검증**: `@Transactional` 자동 롤백 테스트로 직접 확인 — PAID 주문에 배송 등록(READY) → 주문 상태 안 바뀜. 배송을 IN_TRANSIT으로 실제 변경 → 주문이 SHIPPED로 동기화되고 응답에도 그대로 실림. 주문을 수동으로 DELIVERED로 바꿔둔 뒤 "바뀌지 않은" 배송 상태(IN_TRANSIT)를 다시 보냄 → 주문 상태가 DELIVERED로 유지됨(되돌려쓰기 안 함 — 이번에 고친 버그의 핵심 검증). CANCELLED 주문에 배송완료 처리 → CANCELLED 유지. PENDING 주문에 직접 동기화 시도 → 0건 반영. 테스트 데이터는 전부 롤백으로 정리. 배포 후 운영 환경 정상(HTTP 200), 로그에 에러 없음 확인.
+---
+
+### 카테고리를 소프트삭제해도 그 상품이 카테고리별 조회에 계속 나왔음 (2026.11.05)
+- **문제**: `ProductService.getProductsByCategory()`가 상품의 `isActive`만 보고 카테고리 자신의 `isActive`는 전혀 안 봐서, 관리자가 카테고리를 삭제(비활성화)해도 `GET /api/products/category?categoryId=...`로는 그 카테고리의 활성 상품들이 여전히 전부 조회될 수 있었음(다른 방향에서 버그를 찾다가 발견). 이 엔드포인트를 지금 호출하는 프론트 화면은 없어서(공개 상품 목록은 브랜드/성별 기준 클라이언트 필터만 쓰고 있음) 실제 운영 영향은 없었지만, 공개(비로그인) GET 엔드포인트라 직접 호출하면 그대로 드러남.
+- **해결**: 조회 전에 카테고리가 존재하고 활성 상태인지 먼저 확인. 카테고리가 없거나 삭제됐으면 빈 목록을 반환.
+- **교차검증에서 확인한 것**: 처음엔 `ProductService.getProduct()`/`CategoryService.getCategory()`(단건 조회)와 동일하게 "삭제된 카테고리입니다" 예외(400)를 던졌는데, 이 메서드는 목록 조회라 "존재하지 않음/삭제됨/상품이 원래 없음" 전부 호출하는 쪽에선 구분할 이유 없는 "보여줄 상품 없음"이고, 목록 API는 없으면 빈 배열을 돌려주는 게 관례와 맞는다는 지적을 받아 예외 대신 빈 목록으로 변경.
+- **검증**: `@Transactional` 자동 롤백 테스트로 확인 — 활성 카테고리의 상품은 정상 조회, 카테고리를 비활성화하면 그 상품이 빈 목록으로 바뀜, 존재하지 않는 카테고리 id도 에러 없이 빈 목록. 테스트 데이터는 롤백으로 정리. 배포 후 운영 환경에서 존재하지 않는 카테고리 id로 직접 호출해 `[]`(200)로 응답하는 것 확인, 로그에 에러 없음 확인.
 
 ## 빌드 및 배포
 

@@ -100,8 +100,19 @@ public class ProductService {
     }
 
     // 카테고리별 상품 조회
-    // category_id 로 필터링, 삭제된 상품 제외
+    // category_id 로 필터링, 삭제된 상품 제외. 상품의 isActive만 보고 카테고리 자신의 isActive는
+    // 안 보고 있어서, 관리자가 카테고리를 삭제(비활성화)해도 그 카테고리에 속한 활성 상품들은
+    // 이 엔드포인트로 여전히 전부 조회될 수 있었다(다른 방향에서 버그를 찾다가 발견). 단건 조회인
+    // ProductService.getProduct()/CategoryService.getCategory()는 "삭제됨"을 예외로 구분해
+    // 알려주지만, 이 메서드는 목록 조회라 존재하지 않는/삭제된 카테고리나 상품이 하나도 없는
+    // 카테고리나 호출하는 쪽에서는 구분할 이유가 없는 "보여줄 상품 없음"으로 똑같이 취급해
+    // 빈 목록을 돌려준다(교차검증에서 발견 — 처음엔 단건 조회와 똑같이 예외를 던졌는데, 지금은
+    // 아무도 호출하지 않는 엔드포인트라도 목록 API의 관례(없으면 빈 배열)와 맞지 않았음).
     public List<ProductResponseDto> getProductsByCategory(Long categoryId) {
+        Category category = categoryRepository.findById(categoryId).orElse(null);
+        if (category == null || !category.getIsActive()) {
+            return List.of();
+        }
         return productRepository.findByCategoryIdAndIsActiveTrueOrderByIdDesc(categoryId)
                 .stream()
                 .map(ProductResponseDto::from)
