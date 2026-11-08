@@ -393,7 +393,15 @@ public class ProductService {
         } catch (DataIntegrityViolationException e) {
             savedUrls.forEach(this::deleteUploadedFile);
             if (!isBrandRecommendConflict(e)) throw e;
-            throw new IllegalArgumentException("방금 다른 관리자가 같은 브랜드의 추천상품을 변경했습니다. 새로고침 후 다시 시도해주세요.");
+            // createProduct()/setRecommend()는 저장 전에 기존 추천을 먼저 해제하므로, 거기서
+            // 이 유니크 인덱스 충돌이 나면 그 사이 "다른 관리자가 방금" 추천을 또 걸었다는
+            // 뜻이 맞다. 하지만 이 updateProduct()엔 그 해제 로직이 없어서(바로 위 주석 참고),
+            // 관리자 한 명이 혼자 이 상품의 brand를 다른 추천상품이 이미 있는 브랜드로 바꾸는
+            // 것만으로도 동시성과 무관하게 같은 충돌이 난다 — "다른 관리자가 방금"이라는
+            // 문구는 그 경우엔 사실과 다르므로(다른 방향에서 버그를 찾다가 발견), 두 경우
+            // 모두에 맞는 중립적인 안내로 바꾼다.
+            throw new IllegalArgumentException(
+                    "이미 같은 브랜드의 추천상품이 등록되어 있습니다. 브랜드별로 추천상품은 하나만 지정할 수 있습니다.");
         }
 
         // 저장은 이미 끝났으니, 이제부터는 순수 정리 작업이다 — 여기서 예외가 그대로 올라가면
