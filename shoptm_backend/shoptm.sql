@@ -1455,6 +1455,20 @@ ALTER TABLE ONLY public.product_sizes
 
 
 --
+-- Name: product_sizes_product_size_uk; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+-- 같은 상품에 같은 사이즈 행이 두 개 이상 생기면 ProductSizeRepository의
+-- decreaseStockIfAvailable/increaseStock(둘 다 "WHERE product_id + size"로 걸어 여러 행을
+-- 한 번에 원자적 UPDATE함)이 그 중복 행 전부를 동시에 차감/복구해 사이즈별 재고가 조용히
+-- 틀어진다. ProductService.createProduct()/updateProduct()에서 애플리케이션 레벨로도 미리
+-- 막아두지만(requireNoDuplicateSizes), DB 제약으로도 같은 invariant를 보장해 다른 경로로도
+-- 절대 뚫리지 않게 한다.
+
+ALTER TABLE ONLY public.product_sizes
+    ADD CONSTRAINT product_sizes_product_size_uk UNIQUE (product_id, size);
+
+
+--
 -- Name: products products_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 

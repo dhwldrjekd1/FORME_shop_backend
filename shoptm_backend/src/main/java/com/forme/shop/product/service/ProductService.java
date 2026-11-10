@@ -57,6 +57,22 @@ public class ProductService {
         return false;
     }
 
+    // 같은 상품에 같은 사이즈가 두 번 들어오면(관리자 화면에서 사이즈 입력란을 실수로 중복
+    // 추가하는 경우 — 입력창에 중복을 막는 장치가 없음) ProductSizeRepository의
+    // decreaseStockIfAvailable/increaseStock이 "WHERE product_id + size"로 조건을 걸어 원자적
+    // UPDATE를 하는데, 이 조건에 두 행이 동시에 걸려 한 번의 주문/취소로 두 행 모두가 차감·복구
+    // 돼버린다(다른 방향에서 버그를 찾다가 발견). 재고 수량이 조용히 두 배로 틀어지는 문제라,
+    // DB 저장 전에 미리 걸러 "중복 사이즈" 자체를 등록/수정 단계에서 막는다.
+    private static void requireNoDuplicateSizes(List<ProductRequestDto.SizeStock> sizeStocks) {
+        var seen = new java.util.HashSet<String>();
+        for (var ss : sizeStocks) {
+            if (ss.getSize() == null) continue;
+            if (!seen.add(ss.getSize())) {
+                throw new IllegalArgumentException("같은 사이즈(" + ss.getSize() + ")를 두 번 이상 입력할 수 없습니다.");
+            }
+        }
+    }
+
     // originalPrice(할인 전 가격, 화면에 취소선으로 표시)가 실제 판매가(price)보다 낮으면
     // "할인 전 가격이 지금 가격보다 싼" 앞뒤가 안 맞는 표시가 된다. 실제 결제 금액은
     // price와 discountRate로만 계산되고 originalPrice는 순수 표시용이라 결제 사고로
@@ -259,6 +275,7 @@ public class ProductService {
 
         // 사이즈별 재고 저장
         if (dto.getSizeStocks() != null && !dto.getSizeStocks().isEmpty()) {
+            requireNoDuplicateSizes(dto.getSizeStocks());
             for (var ss : dto.getSizeStocks()) {
                 ProductSize ps = ProductSize.builder()
                         .product(product)
@@ -347,17 +364,40 @@ public class ProductService {
         if (dto.getIsNew()          != null) product.setIsNew(dto.getIsNew());
         if (dto.getIsBest()         != null) product.setIsBest(dto.getIsBest());
 
-        // 사이즈별 재고 갱신 (전체 교체)
+        // 사이즈별 재고 갱신 — 기존 행을 전부 지우고 새로 만드는 대신, 사이즈명으로 매칭해
+        // 그대로 남는 사이즈는 재고만 갱신(UPDATE)하고, DTO에 없어진 사이즈만 제거, DTO에만
+        // 있는 새 사이즈만 추가한다. 예전엔 clear() 후 전부 재생성했는데, product_sizes에
+        // UNIQUE(product_id, size) 제약을 추가(이 메서드 바로 아래 requireNoDuplicateSizes
+        // 참고 — 사이즈 중복 입력 자체를 막는 것과는 별개 문제)한 뒤로는, 사이즈명을 전혀 안
+        // 바꾸고 재고 수만 고치는 가장 흔한 수정에서도 Hibernate가 같은 flush 안에서 기존 행의
+        // orphan 삭제보다 새 행의 삽입을 먼저 실행해, 같은 (product_id, size)가 일시적으로
+        // 중복되는 순간이 생겨 그 제약을 그대로 위반했다(교차검증 뒤 실제 DB로 재현 확인).
+        // 사이즈명이 그대로인 경우 삭제/삽입 자체가 전혀 일어나지 않게 해 이 충돌을 없앤다.
         if (dto.getSizeStocks() != null) {
-            if (product.getSizes() != null) product.getSizes().clear();
-            else product.setSizes(new java.util.ArrayList<>());
+            requireNoDuplicateSizes(dto.getSizeStocks());
+            if (product.getSizes() == null) product.setSizes(new java.util.ArrayList<>());
+
+            java.util.Map<String, ProductSize> existingBySize = product.getSizes().stream()
+                    .collect(Collectors.toMap(ProductSize::getSize, ps -> ps));
+            java.util.Set<String> incomingSizes = dto.getSizeStocks().stream()
+                    .map(ProductRequestDto.SizeStock::getSize)
+                    .collect(Collectors.toSet());
+
+            // DTO에 더 이상 없는 사이즈만 제거 (orphanRemoval로 DELETE)
+            product.getSizes().removeIf(ps -> !incomingSizes.contains(ps.getSize()));
+
             for (var ss : dto.getSizeStocks()) {
-                ProductSize ps = ProductSize.builder()
-                        .product(product)
-                        .size(ss.getSize())
-                        .stock(ss.getStock() != null ? ss.getStock() : 0)
-                        .build();
-                product.getSizes().add(ps);
+                int stock = ss.getStock() != null ? ss.getStock() : 0;
+                ProductSize existing = existingBySize.get(ss.getSize());
+                if (existing != null) {
+                    existing.setStock(stock);
+                } else {
+                    product.getSizes().add(ProductSize.builder()
+                            .product(product)
+                            .size(ss.getSize())
+                            .stock(stock)
+                            .build());
+                }
             }
             product.setStock(dto.getSizeStocks().stream()
                     .mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum());
