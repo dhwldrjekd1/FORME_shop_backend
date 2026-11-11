@@ -20,7 +20,14 @@ public class OrderRequestDto {
 
         // @Valid가 없으면 컨테이너(List) 안 OrderItemDto 각 원소의 @NotNull/@Min 등이
         // 전혀 검증되지 않는다 — Bean Validation은 필드 자체에 @Valid가 있어야 원소까지 내려간다.
+        // @Size(max): 이 목록 길이에 상한이 없으면, 로그인한 사용자가 API를 직접 호출해 품목을
+        // 수천 개 실어 보낼 수 있었다 — OrderService.createOrder()가 품목마다 적어도 하나 이상의
+        // DB 쿼리(상품 조회 + 재고 원자적 UPDATE, 사이즈 관리 상품이면 그만큼 더)를 같은
+        // 트랜잭션 안에서 순차로 실행하므로, 그런 요청 하나가 트랜잭션을 오래 붙잡으며 다른
+        // 주문의 재고 UPDATE까지 줄줄이 대기시킬 수 있다(다른 방향에서 버그를 찾다가 발견).
+        // 실제 장바구니 화면은 이 상한에 걸릴 만큼 품목을 담을 일이 없어, 정상 사용에는 영향이 없다.
         @NotEmpty(message = "주문 상품을 선택해주세요.")
+        @Size(max = 100, message = "한 번에 주문할 수 있는 상품 종류는 100개 이하여야 합니다.")
         @Valid
         private List<OrderItemDto> items;  // 주문할 상품 목록
 
