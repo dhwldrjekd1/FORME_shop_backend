@@ -96,7 +96,17 @@ public class SecurityConfig {
                 .addFilterBefore(jwtFilter, UsernamePasswordAuthenticationFilter.class)
                 // ApiNoStoreFilter도 같은 지점(ExceptionTranslationFilter보다 앞)에 등록 — 인증
                 // 실패(401)로 체인이 여기서 바로 끝나도 Cache-Control 헤더는 이미 설정돼 있어야 함
-                .addFilterBefore(new ApiNoStoreFilter(), UsernamePasswordAuthenticationFilter.class);
+                //
+                // 주의: addFilterBefore(..., UsernamePasswordAuthenticationFilter.class)로 등록된
+                // 필터끼리는 Spring Security가 서로 같은 순서값을 매기므로, 이 둘의 실행 순서는
+                // 오직 "코드에 등록한 순서"로만 정해진다(교차검증에서 발견) — ApiNoStoreFilter가
+                // AnalyticsRateLimitFilter보다 반드시 먼저 실행돼야(레이트리밋에 걸려 429로 바로
+                // 끝나는 응답에도 Cache-Control: no-store가 붙어있어야 하므로) 이 두 줄의 순서를
+                // 절대 바꾸지 말 것.
+                .addFilterBefore(new ApiNoStoreFilter(), UsernamePasswordAuthenticationFilter.class)
+                // /api/analytics/track은 permitAll(위 참고)이라 인증 필터를 거치지 않으므로,
+                // 레이트리밋도 같은 지점에 등록해야 인증 여부와 무관하게 항상 적용된다.
+                .addFilterBefore(new AnalyticsRateLimitFilter(), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
     }

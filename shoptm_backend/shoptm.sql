@@ -1495,6 +1495,17 @@ CREATE UNIQUE INDEX products_brand_recommend_uk ON public.products (brand) WHERE
 
 
 --
+-- Name: page_views_created_at_idx; Type: INDEX; Schema: public; Owner: postgres
+--
+-- PageViewRetentionScheduler가 매일 "DELETE FROM page_views WHERE created_at < :cutoff"를
+-- 실행하는데, created_at에 인덱스가 없으면 이 삭제가 매번 테이블 전체를 스캔해야 한다
+-- (교차검증에서 발견). page_views는 /api/analytics/track을 통해 계속 INSERT되는 테이블이라
+-- 이 비용이 시간이 지날수록 커지므로 인덱스를 추가한다.
+
+CREATE INDEX page_views_created_at_idx ON public.page_views (created_at);
+
+
+--
 -- Name: qna qna_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
 --
 

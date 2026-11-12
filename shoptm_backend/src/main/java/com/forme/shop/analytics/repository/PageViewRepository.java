@@ -2,10 +2,18 @@ package com.forme.shop.analytics.repository;
 
 import com.forme.shop.analytics.entity.PageView;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
+import java.time.LocalDateTime;
 import java.util.List;
 
 public interface PageViewRepository extends JpaRepository<PageView, Integer> {
+
+    // PageViewRetentionScheduler가 보존기간이 지난 페이지뷰 기록을 주기적으로 정리하는 데 사용.
+    @Modifying
+    @Query("DELETE FROM PageView p WHERE p.createdAt < :cutoff")
+    int deleteByCreatedAtBefore(@Param("cutoff") LocalDateTime cutoff);
 
     // admin 페이지 제외
     @Query("SELECT p.pageName, AVG(p.duration), COUNT(p) FROM PageView p WHERE p.pagePath NOT LIKE '/admin%' GROUP BY p.pageName ORDER BY AVG(p.duration) DESC")
