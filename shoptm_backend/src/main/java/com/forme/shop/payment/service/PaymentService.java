@@ -16,7 +16,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.client.HttpStatusCodeException;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Base64;
@@ -215,7 +215,9 @@ public class PaymentService {
         // "환불 안 됨"으로 기록해, 담당자가 그 잘못된 기록만 보고 중복 환불을 시도하게 만들
         // 수 있는 훨씬 나쁜 상태다. 그래서 저장은 성공/실패 각 경로에서 따로, 그 경로에
         // 맞는 상태로만 시도한다. 두 catch로 나눈 이유는 아래 각 분기의 주석 참고 — 토스가
-        // 실제로 응답했는지(확실한 실패) 아닌지(응답 자체를 못 받음, 불확실)를 구분한다.
+        // 이 취소 요청 자체를 확인하고 거부했다고 확신할 수 있는지(확실한 실패) 아닌지
+        // (응답을 못 받았거나, 응답을 받았어도 토스 쪽 사정으로 뭔가 실패했을 뿐인 경우 —
+        // 둘 다 불확실)를 구분한다.
         try {
             String encodedKey = Base64.getEncoder()
                     .encodeToString((tossConfig.getSecretKey() + ":").getBytes());
@@ -230,10 +232,12 @@ public class PaymentService {
                     new HttpEntity<>(body, headers),
                     Map.class
             );
-        } catch (HttpStatusCodeException e) {
-            // 토스가 실제로 응답했다(4xx/5xx) — 토스가 이 취소 요청 자체를 확인하고 거부했다는
-            // 뜻이라, 돈이 안 움직였다고 확신하고 종결 상태로 기록해도 안전하다.
-            log.error("결제 자동 환불 실패(토스가 거부) - paymentKey={}, reason={}, status={}, body={}",
+        } catch (HttpClientErrorException e) {
+            // 4xx — 토스가 "이 요청 자체가 잘못됐다"고 응답한 경우(이미 취소된 결제, 잘못된
+            // paymentKey, 권한 문제 등)다. 이런 응답은 토스가 취소 로직을 실행하기도 전에 요청
+            // 자체를 걸러낸 결과라, 돈이 안 움직였다고 확신해도 안전하다 — 그래서 4xx만 종결
+            // 상태로 기록한다(5xx는 아래 catch 참고 — 다른 이유로 분리돼 있음).
+            log.error("결제 자동 환불 실패(토스가 요청 자체를 거부함) - paymentKey={}, reason={}, status={}, body={}",
                     payment.getPaymentKey(), storedReason, e.getStatusCode(), e.getResponseBodyAsString(), e);
             payment.setStatus("REFUND_FAILED");
             payment.setFailReason(truncateToColumn(storedReason + " / 자동 환불 시도도 실패: " + e.getMessage()));
@@ -244,23 +248,27 @@ public class PaymentService {
             }
             return false;
         } catch (Exception e) {
-            // 토스로부터 응답 자체를 못 받은 경우(연결/읽기 타임아웃, 연결 끊김 등 —
-            // RestTemplate은 이런 경우 ResourceAccessException을 던지고 HttpStatusCodeException이
-            // 아니므로 위 분기에 안 걸린다) — 토스가 실제로는 취소를 이미 처리했는데 그 응답만
-            // 네트워크 중간에서 유실됐을 가능성을 배제할 수 없다. 이걸 REFUND_FAILED(종결 상태)로
-            // 단정하면, 실제로는 이미 환불된 돈을 "환불 안 됨"으로 영구히 잘못 기록하게 되고,
-            // 그 잘못된 기록만 보고 담당자가 재환불을 시도하면 이중환불로 이어질 수 있다(다른
-            // 방향에서 버그를 찾다가 발견). 종결 상태가 아닌 REFUND_UNKNOWN으로 남겨서 — 이후
-            // 이 결제에 대해 환불이 다시 시도되면(TERMINAL_STATUSES에 없어 위 가드를 그대로
-            // 통과함) 한 번 더 시도할 기회를 주고, 그 전까지는 관리자가 토스 대시보드에서 실제
-            // 처리 여부를 직접 확인하기 전까지 "확정된 실패"로 보이지 않게 한다.
-            log.error("결제 자동 환불 결과를 확인할 수 없음(토스 응답 없음, 타임아웃/연결 오류 등) — " +
+            // 그 외 전부 — 응답 자체를 못 받은 경우(연결/읽기 타임아웃 등, ResourceAccessException)
+            // 뿐 아니라, 5xx(HttpServerErrorException — HttpClientErrorException이 아니라 이
+            // catch로 떨어짐)도 여기 포함된다. 5xx는 토스가 응답을 주긴 했지만, 그 응답이
+            // "요청을 확인하고 거부했다"는 뜻이 아니다 — 취소 자체는 토스 내부에서 이미 실행된
+            // 뒤, 응답을 만드는 단계에서 토스 쪽 서버 오류가 난 경우도 5xx로 나타날 수 있다
+            // (교차검증에서 발견 — 처음엔 4xx/5xx를 구분 없이 전부 "확실한 실패"로 묶었는데,
+            // 바로 이 경우에 대해선 틀린 가정이었음). 그래서 5xx도 "응답 없음"과 똑같이 취급해,
+            // 돈이 실제로는 이미 환불됐을 가능성을 배제할 수 없는 걸로 본다. 이걸 REFUND_FAILED
+            // (종결 상태)로 단정하면, 실제로는 이미 환불된 돈을 "환불 안 됨"으로 영구히 잘못
+            // 기록하게 되고, 그 잘못된 기록만 보고 담당자가 재환불을 시도하면 이중환불로 이어질
+            // 수 있다(다른 방향에서 버그를 찾다가 발견). 종결 상태가 아닌 REFUND_UNKNOWN으로
+            // 남겨서 — 이후 이 결제에 대해 환불이 다시 시도되면(TERMINAL_STATUSES에 없어 위
+            // 가드를 그대로 통과함) 한 번 더 시도할 기회를 주고, 그 전까지는 관리자가 토스
+            // 대시보드에서 실제 처리 여부를 직접 확인하기 전까지 "확정된 실패"로 보이지 않게 한다.
+            log.error("결제 자동 환불 결과를 확인할 수 없음(토스 응답 없음 또는 5xx 서버 오류 등) — " +
                     "토스 쪽에서 실제로는 이미 처리됐을 수 있어 REFUND_FAILED로 단정하지 않음. " +
                     "토스 대시보드에서 직접 확인 필요 - paymentKey={}, reason={}",
                     payment.getPaymentKey(), storedReason, e);
             payment.setStatus("REFUND_UNKNOWN");
             payment.setFailReason(truncateToColumn(
-                    storedReason + " / 환불 API 응답 확인 불가(타임아웃 등) - 토스 대시보드에서 직접 확인 필요: " + e.getMessage()));
+                    storedReason + " / 환불 API 응답 확인 불가(타임아웃·서버 오류 등) - 토스 대시보드에서 직접 확인 필요: " + e.getMessage()));
             try {
                 paymentRepository.save(payment);
             } catch (Exception saveError) {

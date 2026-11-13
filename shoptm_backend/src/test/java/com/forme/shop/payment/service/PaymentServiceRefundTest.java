@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
@@ -21,9 +22,14 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 // 실제 토스 API를 부를 수 없는(또는 불러서는 안 되는) 환경에서 callTossCancelAndMark()의
-// 예외 타입 분기(HttpStatusCodeException=확실한 실패 vs 그 외=응답 자체를 못 받음)가 올바른
-// Payment.status로 이어지는지만 검증한다. static final RestTemplate을 리플렉션으로 모킹해
-// 네트워크 호출 자체가 전혀 일어나지 않게 한다.
+// 예외 타입 분기가 올바른 Payment.status로 이어지는지만 검증한다. 분기는 2단계다 —
+// HttpClientErrorException(4xx, 토스가 요청 자체를 거부함 → 확실한 실패 → REFUND_FAILED)과
+// 그 외 전부(5xx인 HttpServerErrorException 포함, 응답을 못 받은 경우까지 전부 → 불확실
+// → REFUND_UNKNOWN). 4xx/5xx를 구분 없이 전부 "확실한 실패"로 묶었던 첫 구현은 교차검증에서
+// 5xx도 토스 내부 처리는 이미 끝난 뒤 응답 생성 단계에서만 실패했을 가능성을 배제 못 한다는
+// 지적을 받아 지금의 2단계로 다시 나눠졌으므로, 이 구분이 되돌아가지 않도록 4xx/5xx 둘 다
+// 테스트로 고정해둔다. static final RestTemplate을 리플렉션으로 모킹해 네트워크 호출 자체가
+// 전혀 일어나지 않게 한다.
 class PaymentServiceRefundTest {
 
     private PaymentRepository paymentRepository;
@@ -90,6 +96,26 @@ class PaymentServiceRefundTest {
 
         assertFalse(result);
         assertEquals("REFUND_FAILED", payment.getStatus());
+        verify(paymentRepository, times(1)).save(payment);
+    }
+
+    @Test
+    void 토스_서버오류_5xx는_확실한_실패로_보지_않고_REFUND_UNKNOWN으로_기록한다() throws Exception {
+        Payment payment = Payment.builder()
+                .paymentKey("key5")
+                .tossOrderId("order5")
+                .amount(5000)
+                .status("REFUND_PENDING")
+                .build();
+
+        when(mockRestTemplate.postForEntity(any(String.class), any(), eq(Map.class)))
+                .thenThrow(HttpServerErrorException.create(
+                        HttpStatus.INTERNAL_SERVER_ERROR, "Internal Server Error", null, null, null));
+
+        boolean result = invokeCallTossCancelAndMark(payment);
+
+        assertFalse(result);
+        assertEquals("REFUND_UNKNOWN", payment.getStatus());
         verify(paymentRepository, times(1)).save(payment);
     }
 
