@@ -268,7 +268,7 @@ public class OrderService {
 
         try {
             // 누적 구매 금액 기반 등급 자동 업그레이드
-            updateMemberGrade(member);
+            updateMemberGrade(member.getId());
         } catch (Exception e) {
             log.error("등급 자동 업그레이드 실패 (memberId={}, orderId={}) — 주문 자체는 정상 생성됨",
                     member.getId(), savedOrders.getId(), e);
@@ -289,14 +289,23 @@ public class OrderService {
     }
 
     // 누적 구매 금액 계산 → 등급 자동 변경
-    private void updateMemberGrade(Member member) {
+    // Member 엔티티가 아니라 id만 받는다 — 교차검증에서 발견: 예전엔 호출자가 들고 있는 Member
+    // 엔티티를 그대로 받아 등급 비교(newGrade.equals(member.getGrade()))에 그 스냅샷을 썼는데,
+    // 그러면 호출자가 이 메서드를 부르기 전에 LAZY 연관관계로 들고 있던 미초기화 proxy를 미리
+    // 강제로 초기화해둬야만 했다 — 그걸 깜빡하면(실제로 관리자 취소 경로에서 그랬음) detach된
+    // proxy에 접근하면서 LazyInitializationException이 나고, 등급 재계산이 조용히 실패했다.
+    // id만 받으면 그런 사전 조건이 전혀 필요 없고(아래에서 항상 DB로 직접 다시 읽어옴), 비교
+    // 기준도 그 사이 다른 트랜잭션이 바꿔놨을 수 있는 호출자의 오래된 스냅샷이 아니라 지금
+    // 막 잠궈서 읽은 최신 값이 된다.
+    private void updateMemberGrade(Long memberId) {
         // 같은 회원이 거의 동시에 두 주문을 완료하면, 아래 totalSpent 계산이 서로의(아직 커밋
         // 안 된) 주문을 못 보고 각자 따로 진행돼 — 둘을 합치면 등급 상향 임계값을 넘는데도
         // 양쪽 다 상향을 건너뛸 수 있었다(교차검증에서 발견, 다음 주문에서 정정되긴 하지만
         // 그만큼 늦어짐). 이 회원 row를 먼저 잠궈서(PESSIMISTIC_WRITE) 두 번째 트랜잭션이
         // 첫 번째가 커밋할 때까지 기다리게 만들면, 그 다음 totalSpent를 다시 읽을 때는 이미
         // 첫 번째 주문이 반영된 값을 보게 된다.
-        memberRepository.findByIdForUpdate(member.getId());
+        Member lockedMember = memberRepository.findByIdForUpdate(memberId).orElse(null);
+        if (lockedMember == null) return; // 그 사이 회원이 삭제된 경우(현재는 하드 삭제 없음) 등 — 재계산할 대상 자체가 없음
 
         // 실제로 결제됐고, 그 뒤 취소/환불도 안 된 주문 금액만 합산한다.
         // - paidAt이 있어야 함: PENDING(결제 없는 데모 주문)은 애초에 결제 자체가 없으므로
@@ -306,7 +315,7 @@ public class OrderService {
         //   status만 바꿀 뿐 paidAt은 그대로 남겨두므로, paidAt 조건만으로는 이미 전액 환불된
         //   주문(결제는 했지만 나중에 취소된 것)까지 계속 구매액으로 잡혀버린다 — 두 조건을
         //   모두 만족해야 "실제로 순수하게 결제된 채로 남아있는" 주문이다.
-        int totalSpent = orderRepository.findByMemberIdOrderByCreatedAtDesc(member.getId())
+        int totalSpent = orderRepository.findByMemberIdOrderByCreatedAtDesc(memberId)
                 .stream()
                 .filter(o -> o.getPaidAt() != null && !"CANCELLED".equals(o.getStatus()))
                 .mapToInt(Orders::getTotalPrice)
@@ -323,19 +332,38 @@ public class OrderService {
             newGrade = "BRONZE";     // 50만원 미만
         }
 
-        if (!newGrade.equals(member.getGrade())) {
-            // 이 시점의 member는 위 decreaseStockIfAvailable()의 clearAutomatically=true로
-            // 영속성 컨텍스트가 비워지면서 이미 detach된 상태다. 예전엔 member.setGrade() 후
-            // memberRepository.save(member)(merge)로 저장했는데, merge는 이 detached 스냅샷의
-            // 모든 컬럼을 그대로 DB에 덮어쓴다 — member를 읽어온(createOrder 맨 앞) 시점과 지금
-            // 사이에 다른 요청이 이 회원의 비밀번호/전화번호/주소 등을 바꿔 커밋했다면, 그 변경이
-            // 조용히 예전 값으로 되돌아간다(교차검증에서 발견). grade 컬럼만 원자적으로 갱신해
-            // 그 문제를 피한다. updateGradeIfNotManual의 WHERE절이 gradeManual=false까지 함께
-            // 확인하므로, 관리자가 MemberService.changeGrade()로 등급을 수동 지정해둔 회원은
-            // (이 member 스냅샷이 그 사실을 아직 모르고 있어도) 이 UPDATE가 조용히 0건 처리되어
-            // 자동 재계산이 적용되지 않는다 — "관리자가 VIP로 올려줘도 다음 결제 한 번에 자동으로
-            // 되돌아간다"는 문제를 막기 위함(교차검증에서 발견).
-            memberRepository.updateGradeIfNotManual(member.getId(), newGrade);
+        if (!newGrade.equals(lockedMember.getGrade())) {
+            // 등급 비교는 바로 위에서 막 잠궈서 다시 읽은 lockedMember 기준이라 항상 최신이다.
+            // 실제 저장은 이 lockedMember를 그대로 save(merge)하지 않고 grade 컬럼만 원자적으로
+            // 갱신한다 — merge는 이 스냅샷의 모든 컬럼을 그대로 DB에 덮어써서, 이 메서드를 부르기
+            // 전 다른 요청이 이 회원의 비밀번호/전화번호/주소 등을 바꿔 커밋했다면 그 변경을
+            // 조용히 예전 값으로 되돌릴 수 있다(교차검증에서 발견). updateGradeIfNotManual의
+            // WHERE절이 gradeManual=false까지 함께 확인하므로, 관리자가 MemberService.changeGrade()로
+            // 등급을 수동 지정해둔 회원은 이 UPDATE가 조용히 0건 처리되어 자동 재계산이 적용되지
+            // 않는다 — "관리자가 VIP로 올려줘도 다음 결제 한 번에 자동으로 되돌아간다"는 문제를
+            // 막기 위함(교차검증에서 발견).
+            memberRepository.updateGradeIfNotManual(memberId, newGrade);
+        }
+    }
+
+    // cancelOrder(회원 본인 취소)/doUpdateOrderStatus(관리자 취소)/expireStalePendingOrder(방치된
+    // PENDING 자동 만료) 모두 결제됐던(paidAt 존재) 주문을 취소할 때 호출한다. updateMemberGrade()는
+    // 등급 상향만 다루는 게 아니라, 취소로 줄어든 totalSpent 기준으로 등급을 다시 계산해 "주문으로
+    // 등급을 올린 뒤 그 주문만 취소"로 할인 등급을 영구히 유지하는 걸 막는다(다른 방향에서 버그를
+    // 찾다가 발견 — 취소 경로 어디에서도 이 재계산이 호출되지 않아, 다음 주문을 하지 않는 한
+    // 등급이 영원히 안 내려감). 주문 생성 때와 동일하게 실패해도 취소 자체는 그대로 성공시킨다
+    // (등급 재계산은 부가 기능). 단, refundIfPaidByToss 바로 위 주석과 동일한 한계가 있다 —
+    // updateMemberGrade() 내부의 findByIdForUpdate()가 진짜 DB/영속성 계층 예외(락 타임아웃,
+    // 데드락 등)를 던지면 Hibernate가 이미 바깥 트랜잭션을 rollback-only로 표시해버린 뒤라, 이
+    // try/catch로 잡아도 바깥 트랜잭션(취소 자체)의 커밋까지 막을 수는 없다 — 그런 드문 경우엔
+    // 취소 자체도 실패로 응답되지만(재고 복구 등이 전부 원자적으로 롤백됨), 이 로그 메시지의
+    // "취소 자체는 정상 처리됨"이라는 전제와는 달리 사용자에게는 실패로 보인다는 뜻.
+    private void updateMemberGradeAfterCancellation(Long memberId, Long orderId) {
+        try {
+            updateMemberGrade(memberId);
+        } catch (Exception e) {
+            log.error("주문 취소 후 등급 재계산 실패 (memberId={}, orderId={}) — 취소 자체는 정상 처리됨",
+                    memberId, orderId, e);
         }
     }
 
@@ -396,6 +424,14 @@ public class OrderService {
         // orders의 스칼라 값을 미리 읽어둔다(updateOrderStatus의 wasPaid와 동일한 이유).
         boolean wasPaid = orders.getPaidAt() != null;
 
+        // member는 LAZY 연관관계라 getId()만으로는 초기화(DB 조회)가 일어나지 않지만(식별자는
+        // 프록시 생성 시점부터 이미 알고 있음), 그 외 필드(grade 등)에 접근하려면 초기화가
+        // 필요하다 — updateMemberGrade(Long)이 id만 받고 필요한 값은 그 안에서 다시 직접 읽어오게
+        // 바꿔둔 이유도 이것이다(아래 updateMemberGrade 주석 참고 — 처음엔 Member 엔티티를 그대로
+        // 넘겼다가, 관리자 취소 경로(doUpdateOrderStatus)에서 이 초기화를 깜빡해
+        // LazyInitializationException으로 등급 재계산이 조용히 실패하는 걸 교차검증에서 발견).
+        Long memberId = orders.getMember().getId();
+
         List<OrderItem> items = new ArrayList<>(orders.getOrderItems());
 
         int updated = orderRepository.cancelIfPaid(orderId);
@@ -404,8 +440,20 @@ public class OrderService {
             throw new IllegalArgumentException("취소할 수 없는 주문입니다.");
         }
 
+        finishCancellation(orderId, memberId, wasPaid, items, "회원 요청에 의한 주문 취소");
+    }
+
+    // cancelOrder/doUpdateOrderStatus/expireStalePendingOrder 세 취소 경로가 공통으로 거쳐야
+    // 하는 뒷정리(재고 복구 → 환불 시도 → wasPaid면 등급 재계산)를 한 곳에 모은다 — 이 세 단계를
+    // 각 호출부에 따로 나열하면, 나중에 순서를 바꾸거나 단계를 하나 더 추가할 때 세 곳 모두
+    // 똑같이 고쳐야 하고 하나라도 빠뜨리면 그 경로만 조용히 예전 동작으로 되돌아간다(교차검증에서
+    // 발견 — 실제로 updateMemberGradeAfterCancellation 추가 당시 세 곳 중 한 곳을 먼저 빠뜨렸었음).
+    private void finishCancellation(Long orderId, Long memberId, boolean wasPaid, List<OrderItem> items, String reason) {
         restoreStock(orderId, items);
-        refundIfPaidByToss(orderId, wasPaid, "회원 요청에 의한 주문 취소");
+        refundIfPaidByToss(orderId, wasPaid, reason);
+        if (wasPaid) {
+            updateMemberGradeAfterCancellation(memberId, orderId);
+        }
     }
 
     // 실제 토스 결제로 대금을 받은 주문이었다면 취소 시 그 결제를 환불한다. 재고 복구까지 이미
@@ -594,14 +642,18 @@ public class OrderService {
         // 돈은 그대로 받은 채 주문만 사라지는 사고가 난다(교차검증에서 발견) — 아래 원자적
         // UPDATE 전에 미리 읽어둔 이 값으로 정확히 판단한다.
         boolean wasPaid = orders.getPaidAt() != null;
+        // cancelOrder()/doUpdateOrderStatus()와 동일한 이유 — wasPaid인 주문이면 이 취소로도
+        // 등급을 재계산해야 한다(교차검증에서 발견 — 이 경로만 빠져있었음. 관리자가 PAID 주문을
+        // PENDING으로 되돌려놓고 방치하면 이 배치가 집어 취소하는데, 그때도 등급 할인이 영구히
+        // 남을 수 있는 건 다른 두 취소 경로와 똑같은 문제).
+        Long memberId = orders.getMember().getId();
 
         LocalDateTime cutoff = LocalDateTime.now().minusHours(EXPIRY_HOURS);
         int updated = orderRepository.cancelIfStalePending(orderId, cutoff);
         if (updated == 0) {
             throw new IllegalArgumentException("아직 만료 대상이 아닌 주문입니다.");
         }
-        restoreStock(orderId, items);
-        refundIfPaidByToss(orderId, wasPaid, "방치된 PENDING 주문 자동 만료");
+        finishCancellation(orderId, memberId, wasPaid, items, "방치된 PENDING 주문 자동 만료");
 
         Orders fresh = orderRepository.findById(orderId)
                 .orElseThrow(() -> new IllegalArgumentException("존재하지 않는 주문입니다."));
@@ -628,10 +680,14 @@ public class OrderService {
             // 수도 있는데, 그 경우 현재 status는 더 이상 "PAID"가 아니지만 결제는 분명히 됐던
             // 것이므로 여전히 환불 대상이다. PENDING(결제 없는 데모 주문)만 paidAt이 비어있다.
             boolean wasPaid = orders.getPaidAt() != null;
+            // cancelOrder()와 동일한 이유로 id만 미리 꺼내둔다 — 이 관리자 경로는 findSelfOrAdminOrder가
+            // member를 전혀 들여다보지 않아(본인 확인 자체를 건너뜀) 여기 도달한 orders.getMember()가
+            // 아예 한 번도 초기화되지 않은 LAZY 프록시인 경우가 더 흔한데, getId()는 식별자가 이미
+            // 프록시에 들어있어 초기화(DB 조회) 없이도 안전하게 읽을 수 있다.
+            Long memberId = orders.getMember().getId();
             int updated = orderRepository.cancelIfNotCancelled(orderId);
             if (updated > 0) {
-                restoreStock(orderId, items);
-                refundIfPaidByToss(orderId, wasPaid, "관리자에 의한 주문 취소");
+                finishCancellation(orderId, memberId, wasPaid, items, "관리자에 의한 주문 취소");
             }
         } else {
             // 이 전이도 CANCELLED가 아닌 주문에서만 원자적으로 적용한다 — 그렇지 않으면
