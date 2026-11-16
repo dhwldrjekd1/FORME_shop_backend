@@ -403,18 +403,50 @@ public class ProductService {
                     .mapToInt(s -> s.getStock() != null ? s.getStock() : 0).sum());
         }
 
-        // 이미지 처리: dto에 URL이 있으면 우선 사용
-        if (dto.getImageUrl() != null && !dto.getImageUrl().isBlank()) {
-            product.setImageUrl(dto.getImageUrl());
-        }
-        if (dto.getImageUrls() != null && !dto.getImageUrls().isBlank()) {
-            product.setImageUrls(dto.getImageUrls());
-        }
-
-        // 파일 업로드가 있으면 기존 이미지 교체
+        // 이미지 처리
         List<String> savedUrls = List.of();
         if (images != null && !images.isEmpty()) {
             savedUrls = saveImages(images);
+        }
+
+        if (dto.getImageOrder() != null) {
+            // 기존 이미지 유지분과 새로 올린 파일을 화면에서 지정한 최종 순서 그대로 재구성한다
+            // — "__NEW__" 자리표시자를 images 파트로 저장한 URL로 순서대로 채워 넣는다(DTO 주석
+            // 참고). 자리표시자 개수와 실제로 저장된 파일 수가 어긋나면(네트워크 중 일부만 올라간
+            // 경우 등, 정상 플로우에서는 항상 같아야 함) 남는 자리표시자는 건너뛰어 최종 목록에서
+            // 빠질 뿐, 저장 자체가 실패하진 않는다.
+            List<String> finalOrder = new java.util.ArrayList<>();
+            int newIdx = 0;
+            for (String entry : dto.getImageOrder()) {
+                if ("__NEW__".equals(entry)) {
+                    if (newIdx < savedUrls.size()) finalOrder.add(savedUrls.get(newIdx++));
+                } else if (entry != null && !entry.isBlank()) {
+                    finalOrder.add(entry);
+                }
+            }
+            // 반대로 "__NEW__" 자리표시자보다 실제로 저장된 파일이 더 많으면(정상 플로우에서는
+            // 일어나지 않지만, 혹시 어긋나면), 그 남는 파일들은 product의 어떤 필드에도 참조되지
+            // 않아 아래 updateProduct 끝의 고아 파일 정리(oldImageUrls 기준)에도 안 걸린다 —
+            // 참조할 곳 없이 디스크에 영구히 남게 되므로(교차검증에서 발견) 여기서 바로 지운다.
+            for (int i = newIdx; i < savedUrls.size(); i++) {
+                deleteUploadedFile(savedUrls.get(i));
+            }
+            // dto.getImageOrder()가 null이 아니라 "보내졌다"는 사실 자체가 이 상품의 최종 이미지
+            // 구성을 이 목록으로 완전히 대체하겠다는 뜻이다 — finalOrder가 비어있으면(화면에서
+            // 이미지를 전부 지우고 저장한 경우) 기존 값을 그대로 두는 게 아니라 실제로 비워야
+            // 한다(교차검증에서 발견 — 처음엔 "비어있으면 건너뜀"으로 짜서, 이미지를 전부
+            // 삭제하고 저장해도 DB에는 예전 이미지가 그대로 남아있는데 화면만 비어 보였음).
+            product.setImageUrl(finalOrder.isEmpty() ? null : finalOrder.get(0));
+            product.setImageUrls(finalOrder.isEmpty() ? null : String.join(",", finalOrder));
+        } else {
+            // imageOrder가 없는 경로(서버 이미지 탭, 구버전 클라이언트) — 예전 방식 그대로:
+            // dto에 URL이 있으면 우선 사용하고, 새로 올린 파일이 있으면 그걸로 완전히 교체한다.
+            if (dto.getImageUrl() != null && !dto.getImageUrl().isBlank()) {
+                product.setImageUrl(dto.getImageUrl());
+            }
+            if (dto.getImageUrls() != null && !dto.getImageUrls().isBlank()) {
+                product.setImageUrls(dto.getImageUrls());
+            }
             if (!savedUrls.isEmpty()) {
                 product.setImageUrl(savedUrls.get(0));
                 product.setImageUrls(String.join(",", savedUrls));

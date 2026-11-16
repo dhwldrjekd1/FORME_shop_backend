@@ -116,6 +116,21 @@ public class ProductRequestDto {
         private Integer originalPrice;
         private String imageUrl;
         private String imageUrls;
+
+        // 이미지 수정 화면이 기존 이미지(URL)와 이번에 새로 올리는 파일(images 파트)을 한
+        // 목록에서 같이 보여주고 드래그로 순서까지 바꿀 수 있게 해주는데, 그동안 imageUrl/
+        // imageUrls는 "새 파일이 있으면 그걸로 완전히 교체, 없으면 이 필드값 그대로 사용"
+        // 두 경우만 다뤄서, 기존 이미지를 유지한 채 새 이미지를 "추가"만 하는 가장 흔한
+        // 편집이 저장하면 기존 이미지가 전부 사라지는 결과로 이어졌다(다른 방향에서 버그를
+        // 찾다가 발견 — 화면은 섞어서 관리하는 것처럼 보이지만 실제 저장 결과는 그렇지
+        // 않았음). 이 필드는 최종 이미지 순서를 그대로 담되, 새로 올리는 파일 자리는 아직
+        // URL을 모르니 "__NEW__" 자리표시자로 표시해 보낸다 — ProductService.updateProduct가
+        // images 파트로 저장한 URL을 순서대로 그 자리표시자에 채워 넣어 최종 순서를 재구성한다.
+        // 서버 이미지 탭(기존 업로드 풀에서 고르는 경우)은 새 파일이 없어 이 필드 없이
+        // imageUrl/imageUrls만으로 충분하므로 그대로 둠 — null이면(구버전 클라이언트, 서버
+        // 이미지 탭 등) 아래에서 예전 방식(교체)으로 자연히 돌아간다.
+        private java.util.List<String> imageOrder;
+
         private String thumbnailUrl;
         private String colorName;
         private String colorHex;
