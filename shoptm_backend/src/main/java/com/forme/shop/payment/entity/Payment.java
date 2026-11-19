@@ -13,7 +13,10 @@ import java.time.LocalDateTime;
  *   "카드는 결제됐는데 기록이 하나도 없는" 상태가 남지 않도록 함
  * - 주문(Orders)과 1:1 관계지만, 주문 생성 전(결제만 확정된) 상태에서는 orders가 NULL
  * - 결제 상태 흐름:
- *   CONFIRMED(승인완료, 주문 생성 전) → PROCESSING(어떤 요청이 이 결제로 주문 생성을 선점함)
+ *   CONFIRM_UNKNOWN(토스 승인 API 응답을 못 받아 실제 승인 여부가 불확실한 상태 — 종결 상태가
+ *     아니라서, 같은 paymentKey로 승인이 재시도돼 이번엔 성공하면 CONFIRMED로 승격됨.
+ *     TossController.confirmPayment/PaymentService.recordConfirmAmbiguous 참고)
+ *     → CONFIRMED(승인완료, 주문 생성 전) → PROCESSING(어떤 요청이 이 결제로 주문 생성을 선점함)
  *                                    → LINKED(주문 생성 성공)
  *                                        → REFUND_PENDING(그 주문이 취소돼 환불 대기중 —
  *                                          실제 토스 환불 API 호출 전, 취소와 원자적으로 표시됨)

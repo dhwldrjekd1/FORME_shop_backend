@@ -92,6 +92,16 @@ public class OrderService {
                 if (existing.isPresent() && existing.get().getMember().getId().equals(memberId)) {
                     return OrderResponseDto.from(existing.get());
                 }
+                // CONFIRM_UNKNOWN(토스 승인 API 응답을 못 받아 실제 승인 여부가 불확실한 상태,
+                // TossController.confirmPayment 참고)은 claimForOrderCreation이 요구하는
+                // CONFIRMED가 아니라서 이 분기로 떨어지는데, "이미 처리 중이거나 완료·취소된
+                // 결제"라는 기존 안내는 이 경우엔 사실과 다르다 — 아무것도 처리 중이거나
+                // 완료되지 않았고, 그냥 승인 자체가 재시도돼야 하는 상태다(교차검증에서
+                // 발견). 재시도를 유도하는 더 정확한 안내로 구분한다.
+                if (existingPayment != null && "CONFIRM_UNKNOWN".equals(existingPayment.getStatus())) {
+                    throw new IllegalArgumentException(
+                            "결제 승인 확인이 아직 끝나지 않았습니다. 잠시 후 다시 시도하거나, 계속되면 고객센터로 문의해주세요.");
+                }
                 throw new IllegalArgumentException("이미 처리 중이거나 완료·취소된 결제입니다. 잠시 후 다시 확인해주세요.");
             }
         }

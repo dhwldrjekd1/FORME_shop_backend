@@ -42,4 +42,35 @@ public interface PaymentRepository extends JpaRepository<Payment, Long> {
     @Modifying(clearAutomatically = true)
     @Query("UPDATE Payment p SET p.status = 'PROCESSING' WHERE p.paymentKey = :paymentKey AND p.status = 'CONFIRMED'")
     int claimIfConfirmed(@Param("paymentKey") String paymentKey);
+
+    // 토스 승인(confirm) API 호출 자체가 타임아웃/5xx 등으로 응답을 못 받은 경우 — 토스 쪽에서는
+    // 이미 카드 승인을 완료했을 가능성을 배제할 수 없는데, 그걸 그냥 "실패"로만 응답하고 끝내면
+    // 이 결제가 시스템 어디에도 전혀 흔적이 안 남는다(PaymentService.recordConfirmAmbiguous 참고).
+    // 같은 paymentKey로 이미 다른 상태의 행이 있으면(동시에 들어온 다른 요청이 먼저 확정
+    // 성공/실패를 기록한 경우 등) 덮어쓰지 않고 그대로 둔다 — ON CONFLICT DO NOTHING으로,
+    // 이 불확실한 기록이 이미 확정된 결과를 실수로 되돌리는 일이 없게 한다.
+    @Modifying(clearAutomatically = true)
+    @Query(value = "INSERT INTO payments (payment_key, toss_order_id, amount, member_email, status, fail_reason, created_at, updated_at) " +
+            "VALUES (:paymentKey, :tossOrderId, :amount, :memberEmail, 'CONFIRM_UNKNOWN', :failReason, now(), now()) " +
+            "ON CONFLICT (payment_key) DO NOTHING",
+            nativeQuery = true)
+    int insertConfirmUnknownIfAbsent(@Param("paymentKey") String paymentKey, @Param("tossOrderId") String tossOrderId,
+                                      @Param("amount") int amount, @Param("memberEmail") String memberEmail,
+                                      @Param("failReason") String failReason);
+
+    // recordConfirmed()가 쓰는 원자적 upsert. 같은 paymentKey로 이미 CONFIRM_UNKNOWN 행이
+    // 있으면(응답 유실 후 재시도 confirm이 이번엔 성공한 경우) 그 불확실했던 기록을 확정
+    // 상태로 갱신하고, 행 자체가 없으면 새로 만든다. 그 외 상태(이미 CONFIRMED로 정상
+    // 처리된 경우 등)는 WHERE절에 안 걸려 DO UPDATE가 조용히 아무 일도 하지 않는다 —
+    // Postgres의 조건부 ON CONFLICT DO UPDATE ... WHERE 동작.
+    @Modifying(clearAutomatically = true)
+    @Query(value = "INSERT INTO payments (payment_key, toss_order_id, amount, member_email, status, created_at, updated_at) " +
+            "VALUES (:paymentKey, :tossOrderId, :amount, :memberEmail, 'CONFIRMED', now(), now()) " +
+            "ON CONFLICT (payment_key) DO UPDATE SET " +
+            "toss_order_id = EXCLUDED.toss_order_id, amount = EXCLUDED.amount, " +
+            "member_email = EXCLUDED.member_email, status = 'CONFIRMED', fail_reason = NULL, updated_at = now() " +
+            "WHERE payments.status = 'CONFIRM_UNKNOWN'",
+            nativeQuery = true)
+    int upsertConfirmed(@Param("paymentKey") String paymentKey, @Param("tossOrderId") String tossOrderId,
+                         @Param("amount") int amount, @Param("memberEmail") String memberEmail);
 }

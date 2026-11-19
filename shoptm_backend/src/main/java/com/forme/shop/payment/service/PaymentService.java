@@ -7,7 +7,6 @@ import com.forme.shop.payment.repository.PaymentRepository;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -51,27 +50,35 @@ public class PaymentService {
     private final TossConfig tossConfig;
 
     // 결제 승인 성공 직후 기록 — 이 시점 이후로는 주문 생성이 무슨 이유로 실패하든
-    // "카드는 결제됐다"는 사실이 DB에 남아있어야 함
+    // "카드는 결제됐다"는 사실이 DB에 남아있어야 함. upsertConfirmed는 같은 paymentKey로
+    // 이미 CONFIRM_UNKNOWN 행이 있으면(아래 recordConfirmAmbiguous 참고 — 승인 응답이
+    // 유실됐다가 이번 재시도 confirm이 실제로 성공한 경우) 그 불확실한 기록을 확정 상태로
+    // 갱신하고, 그 외(행이 아예 없거나 이미 CONFIRMED인 경우)는 각각 새로 만들거나 조용히
+    // 그대로 둔다 — 원자적 upsert라 동시에 두 번 호출돼도 안전함.
     @Transactional
     public void recordConfirmed(String paymentKey, String tossOrderId, int amount, String memberEmail) {
-        // 같은 paymentKey로 이미 기록이 있으면(승인 응답 재처리 등) 새로 만들지 않음
-        if (paymentRepository.findByPaymentKey(paymentKey).isPresent()) return;
-        try {
-            // saveAndFlush로 즉시 INSERT를 실행해, 동시에 두 번 호출돼 unique 제약을 어기는 경우
-            // 그 예외를 이 메서드 안에서 바로 잡아낼 수 있게 한다 (그냥 save는 커밋 시점까지
-            // 지연될 수 있어 이 try/catch를 빠져나간 뒤에야 터질 수 있음)
-            paymentRepository.saveAndFlush(Payment.builder()
-                    .paymentKey(paymentKey)
-                    .tossOrderId(tossOrderId)
-                    .amount(amount)
-                    .memberEmail(memberEmail)
-                    .status("CONFIRMED")
-                    .build());
-        } catch (DataIntegrityViolationException e) {
-            // 동시에 두 번 승인 처리가 들어온 경우 — 다른 요청이 먼저 기록을 남긴 것이므로
-            // 정상 상황으로 보고 무시한다 (이미 CONFIRMED 기록은 존재함)
-            log.warn("결제 승인 기록 중복 저장 시도 무시 - paymentKey={}", paymentKey);
+        // 영향받은 행이 0이면 이미 CONFIRMED(또는 그 이후 상태)로 기록돼 있던 것을 그대로
+        // 둔 경우다(동시에 들어온 중복 승인 처리 등) — 예전엔 이걸 별도로 조회해 확인한 뒤
+        // 직접 로그를 남겼는데, 원자적 upsert로 바꾸면서 그 신호가 조용히 사라질 뻔했다
+        // (교차검증에서 발견 — 운영자가 이중 승인 요청 패턴을 진단할 때 쓰던 로그였음).
+        int updated = paymentRepository.upsertConfirmed(paymentKey, tossOrderId, amount, memberEmail);
+        if (updated == 0) {
+            log.warn("결제 승인 기록 중복 저장 시도 무시(이미 CONFIRMED 이후 상태) - paymentKey={}", paymentKey);
         }
+    }
+
+    // 토스 승인(confirm) API 호출 자체가 타임아웃/5xx 등으로 응답을 못 받은 경우 호출한다 —
+    // callTossCancelAndMark의 REFUND_UNKNOWN과 동일한 이유로, 토스 쪽에서는 실제로 이미
+    // 승인을 완료했을 가능성을 배제할 수 없어 "확정된 실패"로 단정하지 않는다(다른 방향에서
+    // 버그를 찾다가 발견 — 이 경우를 전부 응답만 실패로 돌려주고 끝내버리면, 실제로 결제된
+    // 카드가 시스템 어디에도 전혀 흔적 없이 사라져 고객이 재시도하면 이중결제, 포기하면
+    // 받은 돈을 영영 못 찾게 된다). amount는 클라이언트가 보낸(토스가 검증해주지 않은) 값
+    // 그대로 기록 — 금액을 신뢰해서 쓰는 게 아니라, 관리자가 토스 대시보드에서 이 paymentKey를
+    // 직접 찾아 확인하는 단서로만 쓰기 위함.
+    @Transactional
+    public void recordConfirmAmbiguous(String paymentKey, String tossOrderId, int clientSuppliedAmount, String memberEmail) {
+        paymentRepository.insertConfirmUnknownIfAbsent(paymentKey, tossOrderId, clientSuppliedAmount, memberEmail,
+                truncateToColumn("결제 승인 API 응답 확인 불가(타임아웃 등) - 토스 대시보드에서 직접 확인 필요. 금액은 클라이언트 제공값이라 미검증."));
     }
 
     // 이 결제를 "지금 이 요청이" 주문 생성에 쓰겠다고 선점한다. 같은 paymentKey로 동시에
