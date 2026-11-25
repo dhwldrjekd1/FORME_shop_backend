@@ -716,6 +716,12 @@ src/main/java/com/forme/shop/
 - **해결**: `Create`에는 `@NotBlank`/선택 필드와 나란히 `@Size(max=50)` 추가. `Update.carrier`는 기존에 "비어있지 않음"을 확인하던 `@Pattern`에 길이 제한을 합친 단일 정규식으로 교체(이유는 Category/FAQ DTO와 동일 — `@Pattern`과 `@Size`를 따로 두면 공백만 51자처럼 둘 다 동시에 실패하는 입력에서 필드별 에러 메시지가 한쪽만 남음). `Update.trackingNumber`는 "비어있는 게 정상"인 필드라(상태만 바꾸는 요청도 지원해야 함) 공백 거부 없이 길이 제한만 추가.
 - **검증**: Spring의 `Validator` 빈을 직접 호출하는 테스트로 확인(HTTP/DB 변경 없음) — `Create`/`Update` 양쪽 다 51자 거부·50자 통과, 공백+길이초과 동시실패 케이스가 메시지 하나로만 응답, 운송장 번호 없이 상태만 바꾸는 요청은 그대로 통과 — 7개 케이스 모두 통과. 배포 후 운영 환경 정상(HTTP 200), 로그에 에러 없음 확인.
 
+### 상품 가격에 상한이 없어 정수 오버플로 위험 (2026.11.25)
+- **문제**: `ProductRequestDto`의 `price`/`originalPrice`에 상한이 없어서, 관리자가 아주 큰 값을 입력하면(오타 포함) 그 값이 이후 수량·할인율과 곱해지는 여러 계산에서 `int` 범위(약 21억)를 조용히 넘겨 음수 등 틀린 값으로 뒤집힐 수 있었음.
+- **해결**: `ProductRequestDto`에 가격 상한 상수(`MAX_PRICE`, 1억원 — 실제 최고가 약 56.9만원 대비 충분한 여유)를 두고 `Create`/`Update`의 `price`/`originalPrice` 네 곳에 `@Max` 검증 추가. 다만 상한 하나만으로는 수량 상한(999)·품목 수 상한(100)과 겹칠 때의 오버플로를 전부 막지 못해(교차검증에서 발견), 계산 자체도 함께 고침: `PriceUtil.applyDiscount()`의 곱셈을 `double` 연산으로 바꾸고, 단가*수량 계산을 한 곳에 모은 `PriceUtil.multiply()`(long 반환)를 새로 추가해 `CartResponseDto`/`OrderService`/`OrderResponseDto`/`AdminService`의 브랜드별 매출 집계가 전부 이 메서드 하나만 쓰도록 통일(각자 따로 곱하고 있던 동일 패턴의 오버플로가 교차검증을 반복할 때마다 한 곳씩 추가로 발견됨). `OrderService.createOrder()`의 주문 금액 합계는 `long`으로 누적한 뒤 `int` 컬럼에 저장하기 직전에 범위를 확인해, 넘으면 조용히 틀린 값으로 저장하는 대신 명확히 실패시킴. `AdminService.getDashboard()`의 `totalRevenue`/`dayRevenue`도 같은 이유로(개별 주문 금액은 이미 안전해도 "여러 건을 다 더한 합계"는 다시 넘길 수 있음) `long` 합산으로 변경.
+- **교차검증에서 확인한 것**(여러 차례 반복): ① `PriceUtil.applyDiscount()` 자체가 `price * (100 - discountRate)`를 `int`끼리 먼저 곱해, 가격 상한만으로는 할인율이 조금만 걸려도(10%면 약 2170만원부터) 오버플로를 막기 부족했음. ② `CartResponseDto.totalPrice`(장바구니 표시용)에 같은 패턴의 오버플로가 남아있었음(백엔드 다른 코드·프론트 어디서도 이 필드를 읽어 계산하지 않는 순수 표시값이라 `Integer`→`Long` 변경이 안전함을 확인). ③ `OrderResponseDto.OrderItemResponseDto.totalPrice`에도 동일 패턴이 있었음. ④ `AdminService`의 브랜드별 매출 집계(`brandRevMap`)는 품목 하나짜리 계산보다 더 쉽게 넘길 수 있는 합계임에도 같은 패턴이 있었음. ⑤ 그 다음 라운드에서 `totalRevenue`/`dayRevenue`도 같은 이유로 남아있었음이 드러남.
+- **검증**: `PriceUtilTest`(순수 유닛 테스트)로 `applyDiscount`/`multiply` 양쪽의 오버플로 경계값 통과 확인(예전 구현이면 넘겼을 `100_000_000 * 90` 같은 값들). `ProductRequestDtoValidationTest`로 가격 상한 경계값(상한 이하 통과/초과 거부) 확인. 가격 상한(1억원)과 수량 상한(999)이 겹치는 극단적 조합으로 실제 주문 생성을 시도해 `IllegalArgumentException`으로 안전하게 실패하는 것을 `@Transactional` 롤백 테스트로 확인(테스트 종료 후 `psql`로 상품/회원 테이블에 흔적 없음 확인, 테스트 파일은 그 자리에서 삭제). 배포 후 운영 환경 정상(HTTP 200), 로그에 에러 없음 확인.
+
 ## 빌드 및 배포
 
 ```bash

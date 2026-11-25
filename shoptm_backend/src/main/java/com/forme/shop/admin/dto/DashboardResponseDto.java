@@ -29,8 +29,10 @@ public class DashboardResponseDto {
     private Long cancelledOrders;     // 취소 주문 수
 
     // 매출 통계
-    // totalPrice 가 Integer 이므로 Integer 로 변경
-    private Integer totalRevenue;     // 전체 매출액
+    // 주문 한 건의 totalPrice는 이미 안전하게 범위를 확인한 int지만, 그 "여러 건을 다 더한
+    // 합계"는 주문 수가 많아지면 다시 int 범위를 넘길 수 있다(AdminService.getDashboard의
+    // totalRevenue 합산에서 고친 것과 같은 이유 — 교차검증에서 발견). Long으로 받는다.
+    private Long totalRevenue;        // 전체 매출액
 
     // 최근 주문 목록 (5건)
     private List<RecentOrderDto> recentOrders;

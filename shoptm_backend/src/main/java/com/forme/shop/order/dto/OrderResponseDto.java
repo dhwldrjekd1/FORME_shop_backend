@@ -1,5 +1,6 @@
 package com.forme.shop.order.dto;
 
+import com.forme.shop.common.util.PriceUtil;
 import com.forme.shop.order.entity.OrderItem;
 import com.forme.shop.order.entity.Orders;
 import lombok.Builder;
@@ -54,7 +55,11 @@ public class OrderResponseDto {
         private String size;
         private Integer quantity;
         private Integer price;
-        private Integer totalPrice;
+        // 단가 * 수량을 int끼리 곱하면 상품 가격 상한과 수량 상한(999)이 겹칠 때 int 범위를
+        // 넘겨 조용히 틀린 값으로 뒤집힐 수 있었다(CartResponseDto/OrderService에서 고친 것과
+        // 같은 패턴 — 교차검증에서 발견). PriceUtil.multiply()로 통일하고 필드도 Long으로 바꿔
+        // 그 여지를 없앤다.
+        private Long totalPrice;
 
         // OrderItem 엔티티를 OrderItemResponseDto 로 변환하는 정적 메서드
         public static OrderItemResponseDto from(OrderItem item) {
@@ -66,8 +71,7 @@ public class OrderResponseDto {
                     .size(item.getSize())
                     .quantity(item.getQuantity())
                     .price(item.getUnitPrice())
-                    // 총 금액 = 단가 * 수량 (Integer 곱셈)
-                    .totalPrice(item.getUnitPrice() * item.getQuantity())
+                    .totalPrice(PriceUtil.multiply(item.getUnitPrice(), item.getQuantity()))
                     .build();
         }
     }

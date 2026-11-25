@@ -131,7 +131,14 @@ public class OrderService {
             // subtotal: 세일 할인만 반영된(등급 할인 전) 합계 — 프론트(cartStore.totalPrice와
             // 동일)와 정확히 같은 기준으로, 최종 결제 금액 검증에만 쓴다. 등급 할인은 품목마다
             // 따로 반올림하지 않고 이 합계에 한 번만 반올림해서 적용한다(바로 아래 주석 참고).
-            int subtotal = 0;
+            // 상품 가격에 이제 상한(1억원, ProductRequestDto 참고)이 있긴 하지만, 그 상한 자체가
+            // 수량(최대 999, OrderRequestDto.OrderItemDto 참고)·품목 수(최대 100,
+            // OrderRequestDto.Create.items 참고)와 결합했을 때의 int 오버플로를 전부 막아주진
+            // 않는다(다른 방향에서 버그를 찾다가 발견 — 가격 상한만으로는 근본적인 안전장치가
+            // 안 됨). 합계 자체를 long으로 누적해, 품목 하나하나의 곱셈이든 여러 품목의 합산이든
+            // int 범위를 넘기는 순간에도 조용히 음수로 뒤집히는 대신 끝까지 정확한 값을 유지하게
+            // 하고, 그 결과를 int로 좁히기 직전에 범위를 확인한다(아래 totalPrice 계산부 참고).
+            long subtotal = 0;
             int gradeDiscount = getGradeDiscount(member.getGrade());
 
             for (OrderRequestDto.OrderItemDto itemDto : dto.getItems()) {
@@ -186,7 +193,12 @@ public class OrderService {
                 // 실제로 그 금액을 청구하는데 주문 생성은 88원을 기대해 "결제 금액과 주문 금액이
                 // 일치하지 않습니다" 실패(이미 결제된 금액은 자동 환불)로 이어질 수 있었다.
                 int saleUnitPrice = PriceUtil.applyDiscount(product.getPrice(), product.getDiscountRate());
-                subtotal += saleUnitPrice * itemDto.getQuantity();
+                // saleUnitPrice * quantity를 int끼리 먼저 곱하면 subtotal에 더하기도 전에
+                // 그 곱셈 자체에서 이미 int 범위를 넘겨 오버플로할 수 있어, PriceUtil.multiply()로
+                // 곱셈 자체를 long 연산으로 만든다(CartResponseDto/OrderResponseDto/AdminService도
+                // 전부 이 메서드 하나로 통일 — 교차검증에서 발견, 이 계산이 여러 곳에 따로
+                // 복사돼 있어 한 곳을 고치고도 같은 패턴의 다른 호출부를 놓치는 일이 반복됐음).
+                subtotal += PriceUtil.multiply(saleUnitPrice, itemDto.getQuantity());
 
                 // 품목에 표시되는 단가 — 등급 할인도 여기 반영해서 보여준다(주문 내역 화면이
                 // 품목별 소계를 따로 보여주지 않고 품목 가격만 보여주므로). 다만 이 값은 화면
@@ -218,9 +230,21 @@ public class OrderService {
             // subtotal * gradeDiscount를 먼저 int끼리 곱하면(자바의 연산 순서상 /100.0 전에
             // 평가됨) 아주 큰 주문 금액에서 int 범위를 넘겨 조용히 오버플로할 수 있어, 곱하기
             // 전에 피연산자 하나를 double로 미리 바꿔 전체를 double 연산으로 만든다.
-            int gradeDiscountAmount = gradeDiscount > 0
-                    ? (int) Math.round((double) subtotal * gradeDiscount / 100.0) : 0;
-            int totalPrice = subtotal - gradeDiscountAmount;
+            // Math.round(double)는 이미 long을 반환하므로 gradeDiscountAmount도 subtotal과
+            // 같이 끝까지 long으로 들고 간다.
+            long gradeDiscountAmount = gradeDiscount > 0
+                    ? Math.round((double) subtotal * gradeDiscount / 100.0) : 0;
+            long totalPriceLong = subtotal - gradeDiscountAmount;
+            // Orders.totalPrice 컬럼 자체가 Integer라 결국 int로 좁혀야 하는데, 그 전에 범위를
+            // 먼저 확인한다 — 확인 없이 그냥 (int) 캐스팅하면 범위를 넘는 값이 조용히 음수
+            // 등 엉뚱한 값으로 뒤집혀 저장될 수 있다(다른 방향에서 버그를 찾다가 발견). 여기
+            // 도달했다는 건 상품 가격 상한(ProductRequestDto)만으로는 못 막은 조합(극단적인
+            // 수량·품목 수가 겹친 경우 등)이 실제로 있었다는 뜻이라, 조용히 틀린 금액으로
+            // 넘어가는 대신 바로 실패시켜 알아차릴 수 있게 한다.
+            if (totalPriceLong > Integer.MAX_VALUE || totalPriceLong < Integer.MIN_VALUE) {
+                throw new IllegalArgumentException("주문 금액이 너무 큽니다.");
+            }
+            int totalPrice = (int) totalPriceLong;
             orders.setTotalPrice(totalPrice);
 
             // 실제 결제 승인 금액(paidAmount)이 서버가 방금 계산한 진짜 주문 금액(totalPrice)과

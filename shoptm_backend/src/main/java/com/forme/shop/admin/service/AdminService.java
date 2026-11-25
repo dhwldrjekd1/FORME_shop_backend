@@ -3,6 +3,7 @@ package com.forme.shop.admin.service;
 import com.forme.shop.admin.dto.DashboardResponseDto;
 import com.forme.shop.common.security.SecurityUtil;
 import com.forme.shop.common.util.LikeEscapeUtil;
+import com.forme.shop.common.util.PriceUtil;
 import com.forme.shop.member.entity.Member;
 import com.forme.shop.member.repository.MemberRepository;
 import com.forme.shop.order.entity.Orders;
@@ -99,10 +100,13 @@ public class AdminService {
         // 매출 통계
         // =====================
         // 취소된 주문 제외하고 totalPrice 합산
-        // mapToInt 로 Integer 스트림으로 변환 후 sum()
-        int totalRevenue = allOrders.stream()
+        // 주문 한 건의 totalPrice는 이미 안전한 int지만, 이 합계는 "그 값을 여러 건 다 더하는"
+        // 연산이라 orderItems 하나짜리 계산보다 오히려 더 쉽게 int 범위를 넘긴다(brandRevMap
+        // 집계에서 고친 것과 같은 패턴 — 교차검증에서 발견). mapToLong으로 합산 자체를 long
+        // 연산으로 만든다.
+        long totalRevenue = allOrders.stream()
                 .filter(AdminService::countsAsRevenue)
-                .mapToInt(Orders::getTotalPrice)
+                .mapToLong(Orders::getTotalPrice)
                 .sum();
 
         // =====================
@@ -125,10 +129,11 @@ public class AdminService {
         List<Map<String, Object>> dailySales = new ArrayList<>();
         for (int i = 6; i >= 0; i--) {
             LocalDate date = LocalDate.now().minusDays(i);
-            int dayRevenue = allOrders.stream()
+            // totalRevenue와 같은 이유로(교차검증에서 발견) mapToLong 사용.
+            long dayRevenue = allOrders.stream()
                     .filter(AdminService::countsAsRevenue)
                     .filter(o -> o.getCreatedAt().toLocalDate().equals(date))
-                    .mapToInt(Orders::getTotalPrice)
+                    .mapToLong(Orders::getTotalPrice)
                     .sum();
             long dayCount = allOrders.stream()
                     .filter(o -> o.getCreatedAt().toLocalDate().equals(date))
@@ -162,17 +167,22 @@ public class AdminService {
         // 가격을 억지로 보정해 맞추지는 않았다 — 여기 브랜드별 매출은 서로 비교하는 막대
         // 그래프(pct)일 뿐 실결제액 집계가 아니라서 이 정도 오차는 허용 가능하다고 판단했고,
         // 실제 결제·환불 금액은 전부 orders.totalPrice/Payment.amount 기준으로만 정확히 처리된다.
+        // 품목 하나의 단가*수량뿐 아니라 브랜드별로 전체 주문 이력을 다 더하는 합계라, 오히려
+        // 품목 하나짜리 계산보다 int 범위를 넘기기 더 쉽다(다른 방향에서 버그를 찾다가 발견
+        // — CartResponseDto/OrderService/OrderResponseDto에서 고친 것과 같은 패턴이 여기
+        // 집계에도 있었음). PriceUtil.multiply()로 단가*수량 자체를 long으로 계산하고,
+        // Map/합계도 Long으로 들고 가 누적 합산에서도 오버플로 여지를 없앤다.
         List<Map<String, Object>> brandSales = new ArrayList<>();
-        Map<String, Integer> brandRevMap = new LinkedHashMap<>();
+        Map<String, Long> brandRevMap = new LinkedHashMap<>();
         allOrders.stream()
                 .filter(AdminService::countsAsRevenue)
                 .flatMap(o -> o.getOrderItems().stream())
                 .forEach(item -> {
                     String brand = item.getProduct() != null && item.getProduct().getBrand() != null
                             ? item.getProduct().getBrand() : "기타";
-                    brandRevMap.merge(brand, item.getUnitPrice() * item.getQuantity(), Integer::sum);
+                    brandRevMap.merge(brand, PriceUtil.multiply(item.getUnitPrice(), item.getQuantity()), Long::sum);
                 });
-        int maxBrandRev = brandRevMap.values().stream().mapToInt(Integer::intValue).max().orElse(1);
+        long maxBrandRev = brandRevMap.values().stream().mapToLong(Long::longValue).max().orElse(1L);
         brandRevMap.forEach((brand, rev) -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("brand", brand);

@@ -11,6 +11,12 @@ import lombok.Setter;
 
 public class ProductRequestDto {
 
+    // price/originalPrice 상한 — Create/Update 양쪽에서 같은 값을 써야 하는데, 각 @Max
+    // 애너테이션에 리터럴을 따로 박아두면 나중에 상한을 조정할 때 네 곳 중 하나를 놓쳐 서로
+    // 어긋날 수 있다(PriceUtil 클래스 설명에 나온, 계산식이 복사되다 어긋났던 사고와 같은
+    // 종류 — 교차검증에서 발견). 한 곳에만 둔다.
+    public static final int MAX_PRICE = 100_000_000;
+
     // 사이즈별 재고 DTO
     @Getter @Setter
     public static class SizeStock {
@@ -37,8 +43,14 @@ public class ProductRequestDto {
 
         private Long categoryId;       // 카테고리 ID (null이면 기본 카테고리 사용)
 
+        // 상한이 없으면 입력 실수(0을 여러 개 더 붙이는 등)로 들어온 극단적인 가격이 그대로
+        // 저장되고, 그 값이 나중에 주문 생성(OrderService.createOrder)에서 수량과 곱해질 때
+        // int 범위를 넘겨 조용히 오버플로할 수 있었다(다른 방향에서 버그를 찾다가 발견). 이
+        // 매장의 실제 최고가(약 57만원)보다 훨씬 넉넉하게 잡아, 정상적인 고가 상품은 전혀
+        // 막지 않으면서 자릿수 실수만 걸러낸다.
         @NotNull(message = "가격을 입력해주세요.")
         @Min(value = 0, message = "가격은 0원 이상이어야 합니다.")
+        @Max(value = MAX_PRICE, message = "가격은 1억원 이하여야 합니다.")
         private Integer price;
 
         @NotNull(message = "재고를 입력해주세요.")
@@ -64,6 +76,7 @@ public class ProductRequestDto {
         private Integer discountRate;   // 할인율 (%)
 
         @Min(value = 0, message = "할인 전 가격은 0원 이상이어야 합니다.")
+        @Max(value = MAX_PRICE, message = "할인 전 가격은 1억원 이하여야 합니다.")
         private Integer originalPrice;  // 할인 전 가격
         private String imageUrl;        // 서버 이미지 URL (직접 지정)
         private String imageUrls;       // 서버 다중 이미지 URL (콤마 구분)
@@ -96,6 +109,7 @@ public class ProductRequestDto {
         private String description;
 
         @Min(value = 0, message = "가격은 0원 이상이어야 합니다.")
+        @Max(value = MAX_PRICE, message = "가격은 1억원 이하여야 합니다.")
         private Integer price;
 
         @Min(value = 0, message = "재고는 0개 이상이어야 합니다.")
@@ -113,6 +127,7 @@ public class ProductRequestDto {
         private Integer discountRate;
 
         @Min(value = 0, message = "할인 전 가격은 0원 이상이어야 합니다.")
+        @Max(value = MAX_PRICE, message = "할인 전 가격은 1억원 이하여야 합니다.")
         private Integer originalPrice;
         private String imageUrl;
         private String imageUrls;

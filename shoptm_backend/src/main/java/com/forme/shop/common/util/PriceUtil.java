@@ -16,6 +16,25 @@ public class PriceUtil {
     // 할인가를 반환한다.
     public static int applyDiscount(int price, Integer discountRate) {
         if (discountRate == null || discountRate <= 0) return price;
-        return (int) (price * (100 - discountRate) / 100.0);
+        // price * (100 - discountRate)를 int끼리 먼저 곱하면 /100.0으로 double 승격되기도
+        // 전에 이미 그 곱셈 자체에서 int 범위를 넘겨 조용히 오버플로할 수 있다 — ProductRequestDto
+        // 의 가격 상한(1억원)만으로는 할인율이 조금만 걸려도(예: 10%면 약 2170만원부터) 이
+        // 오버플로를 막기에 부족하다(교차검증에서 발견). price를 미리 double로 바꿔 곱셈
+        // 자체를 double 연산으로 만든다 — 결과값 자체는 항상 입력 price 이하라 int로 다시
+        // 좁혀도 범위를 넘을 일이 없다.
+        return (int) ((double) price * (100 - discountRate) / 100.0);
+    }
+
+    // 단가 * 수량을 계산하는 모든 곳(CartResponseDto/OrderService/OrderResponseDto/AdminService
+    // 등)이 각자 int끼리 곱해서, 상품 가격 상한(ProductRequestDto.MAX_PRICE, 1억원)과 수량
+    // 상한(999)이 겹치면 조용히 int 범위를 넘겨 음수 등 틀린 값으로 뒤집히는 문제가 여러 곳에
+    // 따로 있었다(다른 방향에서 버그를 찾다가 발견 — 이 계산이 한 곳에 모여있지 않아서, 한 곳을
+    // 고치고도 같은 패턴의 다른 호출부를 놓치는 일이 반복됐음). 이후로 단가*수량을 계산하는
+    // 곳은 전부 이 메서드 하나만 쓰도록 해서, PriceUtil 클래스 설명에 적힌 것과 같은 종류의
+    // "계산식이 복사되다 어긋나는" 사고가 이 패턴에서도 반복되지 않게 한다. 결과를 long으로
+    // 돌려주는 이유는 호출하는 쪽이 그 값을 다른 값과 더 합산하거나(여러 품목의 합계 등) 범위를
+    // 확인하기 전까지는 int로 너무 일찍 좁히면 안 되기 때문이다.
+    public static long multiply(int unitPrice, int quantity) {
+        return (long) unitPrice * quantity;
     }
 }
