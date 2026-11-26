@@ -1,5 +1,6 @@
 package com.forme.shop.member.dto;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.Email;
@@ -10,9 +11,23 @@ import jakarta.validation.constraints.Size;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.nio.charset.StandardCharsets;
+
 // DTO(Data Transfer Object): 클라이언트 ↔ 서버 간 데이터 전달 전용 객체
 // Entity를 직접 노출하지 않고 DTO를 사용해 필요한 데이터만 주고받음
 public class MemberRequestDto {
+
+    // BCrypt가 encode() 단계에서 이 바이트 수를 넘으면 예외를 던지는 상한. Register/Update
+    // 양쪽의 @AssertTrue 메서드가 각자 리터럴로 들고 있으면 나중에 한쪽만 바꾸고 다른 쪽을
+    // 놓쳐 서로 어긋날 수 있어(ProductRequestDto.MAX_PRICE와 같은 이유 — 교차검증에서 발견)
+    // 한 곳에만 둔다.
+    private static final int MAX_PASSWORD_BYTES = 72;
+
+    // null은 통과시킨다 — Register는 @NotBlank로 이미 null을 막으므로 실질적으로 항상 값이
+    // 있고, Update는 선택 입력(비밀번호를 바꾸지 않는 요청)이라 null이 정상이다.
+    private static boolean isWithinPasswordByteLimit(String password) {
+        return password == null || password.getBytes(StandardCharsets.UTF_8).length <= MAX_PASSWORD_BYTES;
+    }
 
     // 회원가입 요청 시 받을 데이터
     @Getter @Setter
@@ -25,6 +40,17 @@ public class MemberRequestDto {
         @NotBlank(message = "비밀번호를 입력해주세요.")
         @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")  // 최소 8자 검증
         private String password;
+
+        // BCrypt는 72바이트를 넘는 비밀번호를 encode()에서 IllegalArgumentException으로
+        // 거부한다(자르지 않고 예외를 던짐). 글자 수 기준 @Size(max=...)로는 이걸 정확히 막을
+        // 수 없다 — 한글 등 멀티바이트 문자가 섞이면 글자 수는 적어도 바이트 수는 훨씬 커질 수
+        // 있기 때문(교차검증에서 발견). 그 예외가 GlobalExceptionHandler에서 400으로는 안전하게
+        // 처리되지만 다른 검증 에러와 달리 영어 원문("password cannot be more than 72 bytes")이
+        // 그대로 노출됐었음. 실제 바이트 길이를 직접 확인해 가입 단계에서 한국어 메시지로 막는다.
+        @AssertTrue(message = "비밀번호가 너무 깁니다.")
+        private boolean isPasswordByteLengthValid() {
+            return isWithinPasswordByteLimit(password);
+        }
 
         // Member.name 컬럼 길이(50)와 맞춤 — 없으면 DB가 거부하는 DataIntegrityViolationException이
         // 그대로 500으로 노출됨(주문/게시판/QnA DTO에서 고쳤던 것과 같은 종류인데 회원 쪽만
@@ -110,6 +136,13 @@ public class MemberRequestDto {
         // 전혀 없어서 빈 문자열/한 글자짜리 비밀번호로도 그대로 변경될 수 있었음.
         @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")
         private String password;
+
+        // Register.isPasswordByteLengthValid()와 동일한 이유(교차검증에서 발견) — 여긴 선택
+        // 입력(null 허용)이라 password == null이면 그대로 통과시킨다.
+        @AssertTrue(message = "비밀번호가 너무 깁니다.")
+        private boolean isPasswordByteLengthValid() {
+            return isWithinPasswordByteLimit(password);
+        }
 
         // 본인이 자기 비밀번호를 바꿀 때만 필요(MemberService.update() 참고) — 세션이 탈취돼도
         // 현재 비밀번호를 모르면 새 비밀번호로 덮어쓸 수 없도록 막기 위함. 관리자가 다른 회원의
