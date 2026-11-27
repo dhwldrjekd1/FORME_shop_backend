@@ -729,6 +729,13 @@ src/main/java/com/forme/shop/
 - **남는 한계(의도적으로 보류)**: ① `Register.password`에 `@NotBlank`와 `@Size(min=8)`가 같은 필드에 따로 걸려있어, 둘 다 동시에 실패하는 입력(빈 문자열)에서 `GlobalExceptionHandler`의 필드별 에러 `HashMap`이 한쪽 메시지를 덮어쓸 수 있는 문제가 교차검증 중 추가로 발견됐으나, 이번 작업 범위 밖이라 별도로 보고하고 보류함. ② `@AssertTrue` 제약의 에러맵 키가 `password`가 아니라 `passwordByteLengthValid`로 남아, 지금은 프론트가 필드별 키를 읽지 않아 문제가 없지만 향후 필드별 인라인 에러 표시를 추가하면 이 경계를 놓칠 수 있음. ③ `DataInitializer`의 관리자 초기 계정 생성(`ADMIN_INIT_PASSWORD`)은 이 DTO를 거치지 않고 직접 `encode()`를 호출해 이번 검증의 보호를 받지 못함 — 72바이트를 넘는 초기 비밀번호를 설정하면 기동 자체가 실패할 수 있음. 세 가지 모두 사용자에게 별도 보고 후 보류.
 - **검증**: 새 유닛 테스트(`MemberRequestDtoPasswordByteLengthTest`, 순수 Validator 테스트 — HTTP/DB 변경 없음)로 ASCII 73바이트 거부/72바이트 통과, 한글 25자(75바이트) 거부, 수정 시 비밀번호 미입력(null) 통과, 수정 시 73바이트 거부 — 5개 케이스 모두 통과. 배포 후 운영 환경 정상(HTTP 200), 로그에 에러 없음 확인.
 
+### 비밀번호 공백/길이 검증의 NotBlank-Size 충돌과 Update 쪽 공백 비밀번호 허용 (2026.11.27)
+- **문제**: 위 바이트 길이 수정 때 보류했던 ① 번(`Register.password`의 `@NotBlank`+`@Size(min=8)` 충돌)을 실제로 고쳤다. 빈 문자열("")을 보내면 두 제약이 같은 필드("password")에서 동시에 실패해 `GlobalExceptionHandler`의 필드별 에러 `HashMap`이 한쪽 메시지를 조용히 덮어쓸 수 있었음(`BoardRequestDto.Update.title` 등과 동일한 이유 — Create류 필수 필드에는 이 패턴이 그대로 남아있었던 게 드러남). 고치는 과정의 교차검증에서 `Update.password`에는 애초에 `@Size(min=8)`만 있어서 공백 8개짜리 비밀번호가 그대로 통과해 실제 비밀번호로 저장될 수 있는, Register에는 없던 더 심각한 문제도 함께 발견됨(다른 방향에서 버그를 찾다가 발견).
+- **해결**: "공백뿐임"과 "최소 8자"를 하나로 합친 `isValidPasswordLength()` 헬퍼(+ `MIN_PASSWORD_LENGTH` 상수, `MAX_PASSWORD_BYTES`와 동일한 이유로 공유)를 `MemberRequestDto`에 추가하고, `Register`/`Update` 양쪽 `password`에 `@AssertTrue` 메서드 제약(`isPasswordLengthValid`)으로 적용. `Register`는 `@NotBlank`(null 전담, property path "password")와 이 메서드(공백뿐임+길이 전담, property path "passwordLengthValid")로 실패 가능한 제약을 서로 다른 키로 나눠서 더는 충돌하지 않게 했고, `Update`는 이 메서드 하나만으로 Register와 동일한 기준을 적용받게 됨.
+- **교차검증에서 확인한 것**: ① 공백 판정에 `String.trim()/isBlank()`를 쓰면 전각 공백(U+3000, 한국어 IME에서 흔함)으로만 된 값을 걸러내지 못할 뻔했음 — 이 파일의 name/address 필드가 이미 쓰고 있던 `(?sU)...\S.*` 정규식 기준(Unicode 공백까지 인식)으로 통일해 막음. ② 최소 길이 8을 `isValidPasswordLength()` 안과 `Update`의 `@Size(min=8)`에 각각 리터럴로 두면 나중에 한쪽만 바꿔 어긋날 수 있었음 → `MIN_PASSWORD_LENGTH` 상수로 통일.
+- **검증**: `MemberRequestDtoPasswordLengthTest`(순수 Validator 테스트 — HTTP/DB 변경 없음)로 빈 문자열이 `@NotBlank`/길이검증 메시지를 서로 다른 키로 둘 다 보존하는 것, 공백 8자·전각공백 8자 거부, 7자 거부·8자 통과, null 통과(Register는 NotBlank에서만 거부) 확인. `Update.password`도 공백 8자 거부·null 통과·8자 통과까지 동일 기준으로 재확인 — 총 9개 케이스 모두 통과. 배포 후 운영 환경 정상(HTTP 200), 로그에 에러 없음 확인.
+- **남는 한계(의도적으로 보류, 사용자에게 별도 보고 후)**: `@AssertTrue` 제약의 에러맵 키가 `password`가 아니라 `passwordLengthValid`/`passwordByteLengthValid`로 남는 것, `DataInitializer`의 관리자 초기 계정 생성이 이 DTO를 거치지 않는 것은 여전히 그대로 남아있음.
+
 ## 빌드 및 배포
 
 ```bash

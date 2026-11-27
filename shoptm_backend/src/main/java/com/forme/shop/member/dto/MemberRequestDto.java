@@ -29,6 +29,32 @@ public class MemberRequestDto {
         return password == null || password.getBytes(StandardCharsets.UTF_8).length <= MAX_PASSWORD_BYTES;
     }
 
+    // Register/Update 양쪽이 각자 리터럴로 들고 있으면 나중에 한쪽만 바꾸고 놓칠 수 있어
+    // (MAX_PASSWORD_BYTES와 동일한 이유) 한 곳에만 둔다.
+    private static final int MIN_PASSWORD_LENGTH = 8;
+
+    // "공백뿐인 문자가 하나라도 있는가"를 판정하는 기준. name/address에 쓰는 (?sU)...\S.*
+    // 정규식과 동일한 이유로 String.trim()/isBlank() 대신 이걸 쓴다 — trim()은 ASCII 공백만
+    // 지우고, 전각 공백(U+3000, 한국어 IME에서 흔함)·줄바꿈 없는 공백(U+00A0, 복사-붙여넣기에서
+    // 흔함)으로만 된 값을 걸러내지 못한다(교차검증에서 발견 — 처음엔 trim().isEmpty()로 짰다가
+    // 이 코드베이스가 name/address에서 이미 다루고 있던 것과 같은 함정에 빠질 뻔했음).
+    // Pattern.UNICODE_CHARACTER_CLASS가 바로 그 이유로 필요한 플래그.
+    private static final java.util.regex.Pattern PASSWORD_HAS_NON_BLANK_CHAR =
+            java.util.regex.Pattern.compile("(?sU).*\\S.*");
+
+    // 원래 Register.password는 @NotBlank와 @Size(min=8)를 따로 두고, Update.password는
+    // @Size(min=8)만 두고 있었는데, 전자는 빈 문자열("")에서 둘 다 동시에 실패해
+    // GlobalExceptionHandler의 필드별 에러 HashMap이 한쪽 메시지를 덮어쓸 수 있었고
+    // (BoardRequestDto.Update.title 등과 동일한 이유 — 교차검증에서 발견), 후자는 공백뿐인
+    // 8자(예: 띄어쓰기 8개)가 @Size(min=8)만으로는 그대로 통과해 실제 비밀번호로 저장될 수
+    // 있었음(다른 방향에서 버그를 찾다가 발견 — Register는 애초에 이 문제가 없었는데
+    // Update만 공백뿐인 값을 막는 검증이 통째로 빠져 있었음). "공백뿐임"과 "최소 길이"를
+    // 이 메서드 하나로 합쳐 양쪽 다 쓰게 한다.
+    private static boolean isValidPasswordLength(String password) {
+        return password == null
+                || (password.length() >= MIN_PASSWORD_LENGTH && PASSWORD_HAS_NON_BLANK_CHAR.matcher(password).matches());
+    }
+
     // 회원가입 요청 시 받을 데이터
     @Getter @Setter
     public static class Register {
@@ -37,9 +63,18 @@ public class MemberRequestDto {
         @NotBlank(message = "이메일을 입력해주세요.")      // null, 빈 문자열 불가
         private String email;
 
+        // null만 거부하는 제약이라 @NotBlank를 그대로 둔다 — 빈 문자열/공백뿐인 값, 8자
+        // 미만인 값은 아래 isPasswordLengthValid()가 전담한다.
         @NotBlank(message = "비밀번호를 입력해주세요.")
-        @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")  // 최소 8자 검증
         private String password;
+
+        // 길이/공백 검증 자체는 클래스 상단의 isValidPasswordLength() 참고. @NotBlank(null
+        // 전담)와 이 메서드(공백뿐임+8자 미만 전담)로 실패 가능한 제약을 둘로 나눠서, null이
+        // 아닌 입력에선 이 메서드만 실패하므로 더는 같은 필드에서 두 메시지가 경쟁하지 않는다.
+        @AssertTrue(message = "비밀번호는 8자 이상이어야 합니다.")
+        private boolean isPasswordLengthValid() {
+            return isValidPasswordLength(password);
+        }
 
         // BCrypt는 72바이트를 넘는 비밀번호를 encode()에서 IllegalArgumentException으로
         // 거부한다(자르지 않고 예외를 던짐). 글자 수 기준 @Size(max=...)로는 이걸 정확히 막을
@@ -134,8 +169,15 @@ public class MemberRequestDto {
 
         // 가입 시(Register.password)와 동일한 최소 길이를 요구한다. 예전엔 여기에 검증이
         // 전혀 없어서 빈 문자열/한 글자짜리 비밀번호로도 그대로 변경될 수 있었음.
-        @Size(min = 8, message = "비밀번호는 8자 이상이어야 합니다.")
         private String password;
+
+        // 예전엔 @Size(min=8)만 있어서 공백뿐인 8자(띄어쓰기 8개 등)가 그대로 통과해 실제
+        // 비밀번호로 저장될 수 있었음 — Register.isPasswordLengthValid()와 동일한 검증으로
+        // 맞춰 그 차이를 없앤다(다른 방향에서 버그를 찾다가 발견).
+        @AssertTrue(message = "비밀번호는 8자 이상이어야 합니다.")
+        private boolean isPasswordLengthValid() {
+            return isValidPasswordLength(password);
+        }
 
         // Register.isPasswordByteLengthValid()와 동일한 이유(교차검증에서 발견) — 여긴 선택
         // 입력(null 허용)이라 password == null이면 그대로 통과시킨다.
