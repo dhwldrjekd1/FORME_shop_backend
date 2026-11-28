@@ -9,16 +9,18 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-// Register.password가 원래 @NotBlank와 @Size(min=8)를 따로 두고 있어서, 빈 문자열("")처럼
-// 둘 다 동시에 실패하는 입력에서 GlobalExceptionHandler의 필드별 에러 HashMap(키: 필드명)이
-// 한쪽 메시지를 덮어쓸 수 있던 문제(교차검증에서 발견)를 isPasswordLengthValid()로 합친 뒤
-// 검증. 서로 다른 property path(password / passwordLengthValid)로 분리돼 더는 같은 키를
-// 공유하지 않는지까지 직접 확인한다.
+// 비밀번호 검증을 ValidPassword(클래스 레벨 커스텀 제약, PasswordConstraintValidator)로
+// 통합한 뒤 확인. 원래 Register.password는 @NotBlank와 @Size(min=8)를 따로 둬서 빈 문자열
+// ("")처럼 둘 다 동시에 실패하는 입력에서 GlobalExceptionHandler의 필드별 에러 HashMap(키:
+// 필드명)이 한쪽 메시지를 덮어쓸 수 있었고(교차검증에서 발견), Update.password는 애초에
+// 공백뿐인 값을 막는 검증이 없어서 공백 8자가 그대로 통과해 실제 비밀번호로 저장될 수
+// 있었음(다른 방향에서 버그를 찾다가 발견). 이 테스트는 그 두 가지 모두와, 위반이 항상
+// 실제 필드명("password") 하나에만 보고되는지를 함께 검증한다.
 class MemberRequestDtoPasswordLengthTest {
 
     private static final Validator validator = Validation.buildDefaultValidatorFactory().getValidator();
 
-    private MemberRequestDto.Register validDto() {
+    private MemberRequestDto.Register validRegisterDto() {
         MemberRequestDto.Register dto = new MemberRequestDto.Register();
         dto.setEmail("a@a.com");
         dto.setName("홍길동");
@@ -28,58 +30,61 @@ class MemberRequestDtoPasswordLengthTest {
         return dto;
     }
 
+    private <T> String violationMessageOnPasswordPath(Set<ConstraintViolation<T>> violations) {
+        return violations.stream()
+                .filter(v -> v.getPropertyPath().toString().equals("password"))
+                .map(ConstraintViolation::getMessage)
+                .findFirst()
+                .orElse(null);
+    }
+
     @Test
-    void 빈문자열_비밀번호는_NotBlank와_길이검증_메시지가_서로_다른_키로_둘다_살아있다() {
-        MemberRequestDto.Register dto = validDto();
+    void 빈문자열_비밀번호는_password_필드_하나에만_위반이_보고된다() {
+        MemberRequestDto.Register dto = validRegisterDto();
         dto.setPassword("");
 
         Set<ConstraintViolation<MemberRequestDto.Register>> violations = validator.validate(dto);
-
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호를 입력해주세요.")));
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호는 8자 이상이어야 합니다.")));
-        // 예전 구조(@NotBlank + @Size, 둘 다 "password" 키)였다면 HashMap에서 한쪽이
-        // 사라졌을 것 — 지금은 서로 다른 property path를 쓰므로 둘 다 살아남는다.
-        long distinctPaths = violations.stream().map(v -> v.getPropertyPath().toString()).distinct().count();
-        assertEquals(violations.size(), distinctPaths);
+        long onPasswordPath = violations.stream()
+                .filter(v -> v.getPropertyPath().toString().equals("password"))
+                .count();
+        assertEquals(1, onPasswordPath);
+        assertEquals("비밀번호를 입력해주세요.", violationMessageOnPasswordPath(violations));
     }
 
     @Test
     void 공백8자_비밀번호는_공백뿐이라_거부된다() {
-        MemberRequestDto.Register dto = validDto();
+        MemberRequestDto.Register dto = validRegisterDto();
         dto.setPassword(" ".repeat(8));
 
         Set<ConstraintViolation<MemberRequestDto.Register>> violations = validator.validate(dto);
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호는 8자 이상이어야 합니다.")));
+        assertEquals("비밀번호를 입력해주세요.", violationMessageOnPasswordPath(violations));
     }
 
     @Test
-    void 짧은_7자_비밀번호는_길이검증에서만_거부된다() {
-        MemberRequestDto.Register dto = validDto();
+    void 짧은_7자_비밀번호는_8자이상_메시지로_거부된다() {
+        MemberRequestDto.Register dto = validRegisterDto();
         dto.setPassword("abcdefg");
 
         Set<ConstraintViolation<MemberRequestDto.Register>> violations = validator.validate(dto);
-        assertFalse(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호를 입력해주세요.")));
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호는 8자 이상이어야 합니다.")));
+        assertEquals("비밀번호는 8자 이상이어야 합니다.", violationMessageOnPasswordPath(violations));
     }
 
     @Test
     void 정확히_8자_비밀번호는_통과한다() {
-        MemberRequestDto.Register dto = validDto();
+        MemberRequestDto.Register dto = validRegisterDto();
         dto.setPassword("abcdefgh");
 
         Set<ConstraintViolation<MemberRequestDto.Register>> violations = validator.validate(dto);
-        assertFalse(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호를 입력해주세요.")));
-        assertFalse(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호는 8자 이상이어야 합니다.")));
+        assertTrue(violations.stream().noneMatch(v -> v.getPropertyPath().toString().equals("password")));
     }
 
     @Test
-    void null_비밀번호는_NotBlank에서만_거부되고_길이검증은_통과한다() {
-        MemberRequestDto.Register dto = validDto();
+    void null_비밀번호는_필수입력_메시지로_거부된다() {
+        MemberRequestDto.Register dto = validRegisterDto();
         dto.setPassword(null);
 
         Set<ConstraintViolation<MemberRequestDto.Register>> violations = validator.validate(dto);
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호를 입력해주세요.")));
-        assertFalse(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호는 8자 이상이어야 합니다.")));
+        assertEquals("비밀번호를 입력해주세요.", violationMessageOnPasswordPath(violations));
     }
 
     @Test
@@ -87,11 +92,11 @@ class MemberRequestDtoPasswordLengthTest {
         // U+3000(전각 공백)은 String.trim()/isBlank()로는 공백으로 인식되지 않는 경우가
         // 있어(한국어 IME에서 흔함), trim() 기반 검사로 짰다면 이 케이스를 놓쳤을 것 —
         // name/address에 이미 쓰고 있는 (?sU)\S 정규식 기준으로 통일해 막는다.
-        MemberRequestDto.Register dto = validDto();
+        MemberRequestDto.Register dto = validRegisterDto();
         dto.setPassword("　".repeat(8));
 
         Set<ConstraintViolation<MemberRequestDto.Register>> violations = validator.validate(dto);
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호는 8자 이상이어야 합니다.")));
+        assertEquals("비밀번호를 입력해주세요.", violationMessageOnPasswordPath(violations));
     }
 
     @Test
@@ -103,16 +108,17 @@ class MemberRequestDtoPasswordLengthTest {
         dto.setPassword(" ".repeat(8));
 
         Set<ConstraintViolation<MemberRequestDto.Update>> violations = validator.validate(dto);
-        assertTrue(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호는 8자 이상이어야 합니다.")));
+        assertEquals("비밀번호를 입력해주세요.", violationMessageOnPasswordPath(violations));
     }
 
     @Test
-    void Update_비밀번호가_null이면_길이검증을_통과한다() {
+    void Update_비밀번호가_null이면_통과한다() {
+        // Update는 선택 입력 — null은 "비밀번호를 바꾸지 않음"을 뜻하므로 통과해야 한다.
         MemberRequestDto.Update dto = new MemberRequestDto.Update();
         dto.setPassword(null);
 
         Set<ConstraintViolation<MemberRequestDto.Update>> violations = validator.validate(dto);
-        assertFalse(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호는 8자 이상이어야 합니다.")));
+        assertTrue(violations.stream().noneMatch(v -> v.getPropertyPath().toString().equals("password")));
     }
 
     @Test
@@ -121,6 +127,6 @@ class MemberRequestDtoPasswordLengthTest {
         dto.setPassword("abcdefgh");
 
         Set<ConstraintViolation<MemberRequestDto.Update>> violations = validator.validate(dto);
-        assertFalse(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호는 8자 이상이어야 합니다.")));
+        assertTrue(violations.stream().noneMatch(v -> v.getPropertyPath().toString().equals("password")));
     }
 }

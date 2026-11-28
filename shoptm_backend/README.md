@@ -736,6 +736,12 @@ src/main/java/com/forme/shop/
 - **검증**: `MemberRequestDtoPasswordLengthTest`(순수 Validator 테스트 — HTTP/DB 변경 없음)로 빈 문자열이 `@NotBlank`/길이검증 메시지를 서로 다른 키로 둘 다 보존하는 것, 공백 8자·전각공백 8자 거부, 7자 거부·8자 통과, null 통과(Register는 NotBlank에서만 거부) 확인. `Update.password`도 공백 8자 거부·null 통과·8자 통과까지 동일 기준으로 재확인 — 총 9개 케이스 모두 통과. 배포 후 운영 환경 정상(HTTP 200), 로그에 에러 없음 확인.
 - **남는 한계(의도적으로 보류, 사용자에게 별도 보고 후)**: `@AssertTrue` 제약의 에러맵 키가 `password`가 아니라 `passwordLengthValid`/`passwordByteLengthValid`로 남는 것, `DataInitializer`의 관리자 초기 계정 생성이 이 DTO를 거치지 않는 것은 여전히 그대로 남아있음.
 
+### 비밀번호 검증 에러맵 키가 실제 필드명과 다르게 남던 문제 (2026.11.28)
+- **문제**: 위에서 보류했던 ② 번. `@NotBlank`(필드 "password")와 `@AssertTrue` 메서드 제약(필드 "passwordLengthValid"/"passwordByteLengthValid")으로 나눠 충돌은 없앴지만, 그 대가로 길이/바이트 위반이 `GlobalExceptionHandler`의 에러맵에서 실제 필드명이 아닌 메서드 이름으로 노출됐음. 지금은 프론트가 필드별 키를 안 읽어서 문제없지만, 향후 필드별 인라인 에러 표시를 추가하면 비밀번호 칸에 에러가 안 뜨는 식으로 놓칠 수 있는 구조적 결함.
+- **해결**: `@NotBlank`/`@AssertTrue` 조합을 걷어내고, 필수 입력·공백뿐 아님·8자 이상·72바이트 이하 네 조건을 전부 커스텀 Bean Validation 제약(`@ValidPassword`, `PasswordConstraintValidator`) 하나로 통합. 처음엔 클래스 레벨(`@Target(TYPE)`)로 짜서 `HasPassword` 인터페이스로 `Register`/`Update`를 묶고 `addPropertyNode("password")`로 위반 경로를 필드로 되돌려야 했는데, 교차검증에서 이게 불필요한 장치라는 지적을 받고 필드 레벨(`@Target(FIELD)`)로 바꿔 `HasPassword` 자체를 없앰 — 필드 레벨에서는 위반이 그 필드 경로에 자동으로 잡히므로 되돌리는 처리가 처음부터 필요 없었음. 네 조건이 같은 필드에 걸리더라도 우선순위(필수/공백뿐임 → 짧음 → 길음)에 따라 항상 위반을 1개만 보고하도록 해서, 에러맵 충돌 자체가 구조적으로 일어나지 않게 함.
+- **검증**: 기존 유닛 테스트(`MemberRequestDtoPasswordLengthTest`/`MemberRequestDtoPasswordByteLengthTest`)를 새 구조에 맞게 다시 확인(14개 케이스 모두 통과, 위반이 "password" 필드 하나에만 잡히는 것까지 직접 확인). 추가로 `LocalValidatorFactoryBean`(Spring Boot가 내부적으로 쓰는 것과 동일한 어댑터)으로 실제 `@Valid` 컨트롤러 경로가 거치는 `ConstraintViolation → FieldError` 변환 단계까지 서버 기동 없이 재현해, `FieldError.getField()`가 실제로 `"password"`로 나오는지 직접 확인(`MemberRequestDtoPasswordSpringMvcMappingTest`, 2개 케이스) — 지금까지는 이 변환 단계가 수동 확인에만 의존하고 있었음(교차검증에서 발견). 배포 후 운영 환경 정상(HTTP 200), 로그에 에러 없음 확인.
+- **남는 한계(의도적으로 보류)**: `DataInitializer`의 관리자 초기 계정 생성(`ADMIN_INIT_PASSWORD`)이 이 DTO를 거치지 않고 직접 `encode()`를 호출해 여전히 이 검증의 보호를 받지 못함.
+
 ## 빌드 및 배포
 
 ```bash

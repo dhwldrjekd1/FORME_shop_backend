@@ -10,8 +10,7 @@ import java.util.Set;
 import static org.junit.jupiter.api.Assertions.*;
 
 // BCrypt가 72바이트를 넘는 비밀번호를 encode()에서 예외로 거부하는 문제(교차검증에서 발견)를
-// @AssertTrue로 가입/수정 단계에서 미리 막았는지 확인. private 메서드 기반 제약이 Hibernate
-// Validator에 실제로 인식되는지까지 함께 검증.
+// ValidPassword(클래스 레벨 커스텀 제약)로 가입/수정 단계에서 미리 막았는지 확인.
 class MemberRequestDtoPasswordByteLengthTest {
 
     // 테스트 메서드마다(JUnit 5 기본 동작) 매번 새로 만들면 전체 분류 스캔+부트스트랩이 반복돼
@@ -30,6 +29,9 @@ class MemberRequestDtoPasswordByteLengthTest {
 
         Set<ConstraintViolation<MemberRequestDto.Register>> violations = validator.validate(dto);
         assertTrue(violations.stream().anyMatch(v -> v.getMessage().equals("비밀번호가 너무 깁니다.")));
+        // 에러맵 키가 실제 필드명("password")과 일치하는지도 함께 확인 — 예전 @AssertTrue
+        // 방식에서는 메서드 이름(passwordByteLengthValid)으로 샜던 부분(교차검증에서 발견).
+        assertTrue(violations.stream().anyMatch(v -> v.getPropertyPath().toString().equals("password")));
     }
 
     @Test
